@@ -1,0 +1,194 @@
+body{
+    background-color: #000000;
+    text-align: center;
+    padding-left: 40px;
+    padding-right: 40px;
+    padding-top: 40px;
+    color: white;
+    font-family: sans-serif;
+}
+
+.introduction{
+    color: white;
+    font-size: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.introduction button{
+    background-color: transparent;
+    border: none;
+    width: 60px;
+    aspect-ratio: 1/1;
+    color: white;
+    cursor: pointer;
+}
+
+.introduction button:hover{
+    color: #F2E30F;
+}
+
+.divider{
+    border-color: #3FB1B1;
+}
+
+#file {
+    color: white;
+}
+
+.upload-file{
+    height: 50px;
+    aspect-ratio: 1/1;
+    background-color: transparent;
+    border: none;
+    color: white;
+    cursor: pointer;
+    margin-left: 200px;
+}
+.reset{
+    height: 50px;
+    aspect-ratio: 1/1;
+    background-color: transparent;
+    border: none;
+    color: white;
+    cursor: pointer;
+}
+.reset:hover{
+    color: #F2E30F;
+}
+.upload-file:hover{
+    color: #F2E30F;
+}
+
+#upload-file-form{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 100px;
+}
+
+.file_name{
+ margin: 50px;
+ color: #F2E30F;
+ font-size: 20px;
+}
+
+.real_values #values{
+    font-size: 20px;
+
+}
+.real_values {
+    display: flex;
+    justify-content: center;
+    align-items: top;
+}
+
+
+.real_values .ch1_values h2{
+    color: #F2E30F;
+}
+.real_values .ch2_values h2{
+    color: #3FB1B1;
+}
+
+
+.input{
+    background-color: transparent;
+    color: white;
+    width: 200px;
+    height: 50px;
+    border-color: white;
+    font-size: 20px;
+    margin-bottom: 20px;
+    margin-right: 10px;
+}
+
+.ch1_values{
+    margin-right: 80px;
+}
+
+#real_values_form button{
+    background-color: transparent;
+    border: none;
+    width: 60px;
+    aspect-ratio: 1/1;
+    color: white;
+    cursor: pointer;
+    margin-left: 80px;
+}
+
+#real_values_form button:hover{
+    color: #F2E30F;
+}
+#real_values_form button:disabled{
+    opacity: 0.3;
+}
+
+
+.config_table {
+    width: 100%;
+    border-collapse: collapse;
+    border: none;
+}
+
+/* Quita todos los bordes de celdas */
+.config_table th,
+.config_table td {
+    border: none;
+    padding: 20px;
+}
+
+/* Solo líneas horizontales entre filas */
+.config_table thead tr,
+.config_table tbody tr {
+    border-bottom: 1px solid #ccc;
+}
+
+/* Opcional: quitar la línea de la última fila si no la quieres */
+.config_table tbody tr:last-child {
+    border-bottom: none;
+}
+
+/* Alineación opcional */
+.config_table th:first-child,
+.config_table td:first-child {
+    text-align: left;
+}
+
+.config_table th:not(:first-child),
+.config_table td:not(:first-child) {
+    text-align: center;
+}
+
+
+.measures_table {
+    width: 100%;
+    border-collapse: collapse;
+    border: none;
+}
+
+.measures_table th,
+.measures_table td {
+    border: none;
+    padding: 20px;
+}
+
+.measures_table thead tr,
+.measures_table tbody tr {
+    border-bottom: 1px solid #ccc;
+}
+
+.measures_table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.measures_table th:first-child,
+.measures_table td:first-child {
+    text-align: left;
+}
+
+.measures_table th:not(:first-child),
+.measures_table td:not(:first-child) {
+    text-align: center;
+}

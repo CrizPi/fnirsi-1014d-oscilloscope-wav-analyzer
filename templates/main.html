@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>osciloscope_fnirsi_1014d_analizer</title>
+    <link href="static\style.css" rel="stylesheet" />
+
+
+</head>
+<body>
+
+
+    <div class="introduction">
+        <strong> <a>osciloscope fnirsi 1014d analizer</a> </strong>
+
+        <button name="introduction"> <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" />
+</svg>
+
+</button>
+    </div>
+
+<hr class="divider">
+
+<form method="POST" id="upload-file-form" enctype="multipart/form-data">
+    
+    <input type="file" id="file" name="file" accept=".wav" required/>
+
+    <button class="upload-file" type="submit" name="upload-file">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+</svg>
+    </button>
+
+</form>
+
+<div>
+    <a class="file_name">{{file_name}}</a>
+    <form method="POST" id="reset" enctype="multipart/form-data">
+    <button class="reset" type="submit" name="reset">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+</svg>
+    </button>
+</form>
+</div>
+
+<hr class="divider">
+
+<h1>Oscilloscope setup</h1>
+
+<table class="config_table">
+    <thead>
+        <tr>
+            <th>Parámetro</th>
+            <th>CH1</th>
+            <th>CH2</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Volt/div</td>
+            <td>{{ config.volts_div[0] }} {{ config.units[0] }}/div</td>
+            <td>{{ config.volts_div[1] }} {{ config.units[1] }}/div</td>
+        </tr>
+
+    <tr>
+        <td>Probe</td>
+        <td>{{ config.probe[0] }}x</td>
+        <td>{{ config.probe[1] }}x</td>
+    </tr>
+
+    <tr>
+        <td>Coupling</td>
+        <td>{{ config.coupling[0] }}</td>
+        <td>{{ config.coupling[1] }}</td>
+    </tr>
+
+    <tr>
+        <td>Time/div</td>
+        <td colspan="2">
+            {{ config.time_div }} {{ config.time_units }}/div
+        </td>
+    </tr>
+</tbody>
+
+
+</table>
+
+
+<hr class="divider">
+<h1>Measures</h1>
+<table class="measures_table">
+    <thead>
+        <tr>
+            <th>Parámetro</th>
+            <th>CH1</th>
+            <th>CH2</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Vmax</td>
+            <td>{{ measures.Vmax[0] }}</td>
+            <td>{{ measures.Vmax[1] }}</td>
+        </tr>
+        <tr>
+            <td>Vmin</td>
+            <td>{{ measures.Vmin[0] }}</td>
+            <td>{{ measures.Vmin[1] }}</td>
+        </tr>
+        <tr>
+            <td>Vavg</td>
+            <td>{{ measures.Vavg[0] }}</td>
+            <td>{{ measures.Vavg[1] }}</td>
+        </tr>
+        <tr>
+            <td>Vrms</td>
+            <td>{{ measures.Vrms[0] }}</td>
+            <td>{{ measures.Vrms[1] }}</td>
+        </tr>
+        <tr>
+            <td>Vpp</td>
+            <td>{{ measures.Vpp[0] }}</td>
+            <td>{{ measures.Vpp[1] }}</td>
+        </tr>
+        <tr>
+            <td>Vp</td>
+            <td>{{ measures.Vp[0] }}</td>
+            <td>{{ measures.Vp[1] }}</td>
+        </tr>
+        <tr>
+            <td>Freq</td>
+            <td>{{ measures.Freq[0] }}</td>
+            <td>{{ measures.Freq[1] }}</td>
+        </tr>
+        <tr>
+            <td>Cycle</td>
+            <td>{{ measures.Cycle[0] }}</td>
+            <td>{{ measures.Cycle[1] }}</td>
+        </tr>
+        <tr>
+            <td>Time+</td>
+            <td>{{ measures['Time+'][0] }}</td>
+            <td>{{ measures['Time+'][1] }}</td>
+        </tr>
+        <tr>
+            <td>Time-</td>
+            <td>{{ measures['Time-'][0] }}</td>
+            <td>{{ measures['Time-'][1] }}</td>
+        </tr>
+        <tr>
+            <td>Duty+</td>
+            <td>{{ measures['Duty+'][0] }}</td>
+            <td>{{ measures['Duty+'][1] }}</td>
+        </tr>
+        <tr>
+            <td>Duty-</td>
+            <td>{{ measures['Duty-'][0] }}</td>
+            <td>{{ measures['Duty-'][1] }}</td>
+        </tr>
+    </tbody>
+</table>
+
+<div style="width: 100%;">
+    <img src="data:image/png;base64,{{ grafica }}" style="width:100%;">
+</div>
+
+
+
+</body>
+</html>
