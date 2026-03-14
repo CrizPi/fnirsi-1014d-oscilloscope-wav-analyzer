@@ -61,8 +61,13 @@
     <tbody>
         <tr>
             <td>Volt/div</td>
-            <td>{{ config.volts_div[0] }} {{ config.units[0] }}/div</td>
-            <td>{{ config.volts_div[1] }} {{ config.units[1] }}/div</td>
+            <td>{{ config.volts_div[0] }} {{ config.volt_units[0] }}/div</td>
+            <td>{{ config.volts_div[1] }} {{ config.volt_units[1] }}/div</td>
+        </tr>
+        <tr>
+            <td>Pos</td>
+            <td>{{ config.vert_pos_ch1 }}</td>
+            <td>{{ config.vert_pos_ch2 }}</td>
         </tr>
 
     <tr>
@@ -102,63 +107,63 @@
     <tbody>
         <tr>
             <td>Vmax</td>
-            <td>{{ measures.Vmax[0] }}</td>
-            <td>{{ measures.Vmax[1] }}</td>
+            <td>{{ measures.Vmax[0] }} V</td>
+            <td>{{ measures.Vmax[1] }} V</td>
         </tr>
         <tr>
             <td>Vmin</td>
-            <td>{{ measures.Vmin[0] }}</td>
-            <td>{{ measures.Vmin[1] }}</td>
+            <td>{{ measures.Vmin[0] }} V</td>
+            <td>{{ measures.Vmin[1] }} V</td>
         </tr>
         <tr>
             <td>Vavg</td>
-            <td>{{ measures.Vavg[0] }}</td>
-            <td>{{ measures.Vavg[1] }}</td>
+            <td>{{ measures.Vavg[0] }} V</td>
+            <td>{{ measures.Vavg[1] }} V</td>
         </tr>
         <tr>
             <td>Vrms</td>
-            <td>{{ measures.Vrms[0] }}</td>
-            <td>{{ measures.Vrms[1] }}</td>
+            <td>{{ measures.Vrms[0] }} Vrms</td>
+            <td>{{ measures.Vrms[1] }} Vrms</td>
         </tr>
         <tr>
             <td>Vpp</td>
-            <td>{{ measures.Vpp[0] }}</td>
-            <td>{{ measures.Vpp[1] }}</td>
+            <td>{{ measures.Vpp[0] }} Vpp</td>
+            <td>{{ measures.Vpp[1] }} Vpp</td>
         </tr>
         <tr>
             <td>Vp</td>
-            <td>{{ measures.Vp[0] }}</td>
-            <td>{{ measures.Vp[1] }}</td>
+            <td>{{ measures.Vp[0] }} Vp</td>
+            <td>{{ measures.Vp[1] }} Vp</td>
         </tr>
         <tr>
             <td>Freq</td>
-            <td>{{ measures.Freq[0] }}</td>
-            <td>{{ measures.Freq[1] }}</td>
+            <td>{{ measures.Freq[0] }} {{ measures.freq_units[0] }}</td>
+            <td>{{ measures.Freq[1] }} {{ measures.freq_units[1] }}</td>
         </tr>
         <tr>
             <td>Cycle</td>
-            <td>{{ measures.Cycle[0] }}</td>
-            <td>{{ measures.Cycle[1] }}</td>
+            <td>{{ measures.Cycle[0] }} {{ measures.cycle_units[0] }}</td>
+            <td>{{ measures.Cycle[1] }} {{ measures.cycle_units[1] }}</td>
         </tr>
         <tr>
             <td>Time+</td>
-            <td>{{ measures['Time+'][0] }}</td>
-            <td>{{ measures['Time+'][1] }}</td>
+            <td>{{ measures['Time+'][0] }} {{ measures.time_plus_units[0] }}</td>
+            <td>{{ measures['Time+'][1] }} {{ measures.time_plus_units[1] }}</td>
         </tr>
         <tr>
             <td>Time-</td>
-            <td>{{ measures['Time-'][0] }}</td>
-            <td>{{ measures['Time-'][1] }}</td>
+            <td>{{ measures['Time-'][0] }} {{ measures.time_minus_units[0] }}</td>
+            <td>{{ measures['Time-'][1] }} {{ measures.time_minus_units[1] }}</td>
         </tr>
         <tr>
             <td>Duty+</td>
-            <td>{{ measures['Duty+'][0] }}</td>
-            <td>{{ measures['Duty+'][1] }}</td>
+            <td>{{ measures['Duty+'][0] }} %</td>
+            <td>{{ measures['Duty+'][1] }} %</td>
         </tr>
         <tr>
             <td>Duty-</td>
-            <td>{{ measures['Duty-'][0] }}</td>
-            <td>{{ measures['Duty-'][1] }}</td>
+            <td>{{ measures['Duty-'][0] }} %</td>
+            <td>{{ measures['Duty-'][1] }} %</td>
         </tr>
     </tbody>
 </table>
