@@ -54,8 +54,8 @@
     <thead>
         <tr>
             <th>Parámetro</th>
-            <th>CH1</th>
-            <th>CH2</th>
+            <th>X</th>
+            <th>Y</th>
         </tr>
     </thead>
     <tbody>
@@ -64,12 +64,6 @@
             <td>{{ config.volts_div[0] }} {{ config.volt_units[0] }}/div</td>
             <td>{{ config.volts_div[1] }} {{ config.volt_units[1] }}/div</td>
         </tr>
-        <tr>
-            <td>Pos</td>
-            <td>{{ config.vert_pos_ch1 }}</td>
-            <td>{{ config.vert_pos_ch2 }}</td>
-        </tr>
-
     <tr>
         <td>Probe</td>
         <td>{{ config.probe[0] }}x</td>
@@ -100,8 +94,8 @@
     <thead>
         <tr>
             <th>Parámetro</th>
-            <th>CH1</th>
-            <th>CH2</th>
+            <th>X</th>
+            <th>Y</th>
         </tr>
     </thead>
     <tbody>
@@ -168,10 +162,20 @@
     </tbody>
 </table>
 
+{% if grafica %}
 <div style="width: 100%;">
     <img src="data:image/png;base64,{{ grafica }}" style="width:100%;">
 </div>
+{% endif %}
 
+<div style="margin-top: 20px;">
+    <form action="{{ url_for('download_pdf') }}" method="get" style="margin: 20px 0;">
+    <button type="submit" class="btn btn-success" {% if not file %}disabled{% endif %}>
+        📄 Descargar PDF Reporte
+    </button>
+</form>
+
+</div>
 
 
 </body>

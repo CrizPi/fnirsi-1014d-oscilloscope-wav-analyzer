@@ -1,10 +1,11 @@
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request, session, send_file  # <-- Agregar send_file
 import numpy as np
 import os
 import uuid  # Para generar nombres únicos
 from file_analizer import get_scope_config, get_scope_measures, get_scope_raw_data_display,get_scope_raw_data_complete
 from plot_maker import generate_grafic
 from signal_analyzer import get_scope_fs_and_time, calculate_frequency, convert_scope_data
+from report import generate_scope_pdf_report
 
 
 app = Flask(__name__)
@@ -40,10 +41,12 @@ def main():
     default_measures = {'Vmax': [0, 0], 'Vmin': [0, 0], 'Vavg': [0, 0], 'Vrms': [0, 0], 'Vpp': [0, 0], 'Vp': [0, 0], 'Freq': [0, 0],
                         'Cycle': [0, 0], 'Time+': [0, 0], 'Time-': [0, 0], 'Duty+': [0, 0], 'Duty-': [0, 0], 'freq_units': ['Hz', 'Hz'], 'freq_multiplier': [1, 1],
                         'cycle_units': ['S', 'Hz'], 'cycle_multiplier': [1, 1], 'time_plus_units': ['S', 'S'], 'time_minus_units': ['S', 'S'], 'time_plus_multiplier': [1, 1], 'time_minus_multiplier': [1, 1]}
-    t=[]
-    ch1_v=[]
-    ch2_v=[]
-    
+    t_clear = np.arange(-375, 376)  
+    ch_clear = np.zeros(750)
+
+    measures=default_config
+
+
     # --- SUBIR ARCHIVO ---
     if request.method=="POST" and "upload-file" in request.form:
         file = request.files['file']
@@ -59,17 +62,19 @@ def main():
             # Procesar archivo
             config = get_scope_config(file_path)
             measures = get_scope_measures(file_path)
-            ch1_disp, ch2_disp = get_scope_raw_data_display(file_path)
-            ch1_comp, ch2_comp = get_scope_raw_data_complete(file_path)
+            ch1_disp, ch2_disp = get_scope_raw_data_display(file_path, measures)
+            ch1_comp, ch2_comp = get_scope_raw_data_complete(file_path,measures)
             fs, t= get_scope_fs_and_time(ch1_disp, config)
-            ch1_v,ch2_v= convert_scope_data(ch1_disp, ch2_disp, config, measures)
+            ch1_v_dips,ch2_v_dips= convert_scope_data(ch1_disp, ch2_disp, config, measures)
 
-            vmax1=max(ch1_v)
-            vmax2=max(ch2_v)
-            vmin1=min(ch1_v)
-            vmin2=min(ch2_v)
+            vmax1=max(ch1_v_dips)
+            vmax2=max(ch2_v_dips)
+            vmin1=min(ch1_v_dips)
+            vmin2=min(ch2_v_dips)
             vpp1=vmax1-vmin1
             vpp2=vmax2-vmin2
+            print(f"ch1- vmax:{vmax1}, vmin:{vmin1}, vpp:{vpp1}")
+            print(f"ch2- vmax:{vmax2}, vmin:{vmin2}, vpp:{vpp2}")
             
             # Guardar info ligera en sesión
             session["file_wav"] = file_path
@@ -85,28 +90,29 @@ def main():
         file_name = "No File"
         config = default_config
         measures = default_measures
-        grafica1 = generate_grafic(t, ch1_v, ch2_v, file_name, measures)
-        return render_template("main.html",
-                               file=file_path,
-                               file_name=file_name,
-                               config=config,
-                               measures=measures,
-                               grafica=grafica1)
+        t= t_clear  
+        ch1_v_dips = ch_clear
+        ch2_v_dips = ch_clear
 
     # --- LEER DATOS DE LA SESIÓN ---
-    file_path = session.get("file_wav")
-    config = session.get("config", default_config)
-    measures = session.get("measures", default_measures)
-    file_name = session.get("original_name", "No File")
+    file_path = session.get("file_wav")     
+    if file_path:
+        config = session.get("config", default_config)
+        measures = session.get("measures", default_measures)
+        file_name = session.get("original_name", "No File")
+        ch1_disp, ch2_disp = get_scope_raw_data_display(file_path, measures)
+        ch1_v_dips,ch2_v_dips= convert_scope_data(ch1_disp, ch2_disp, config, measures)
+        fs, t= get_scope_fs_and_time(ch1_disp, config)
+    else:
+        file_path = None
+        file_name = "No File"
+        config = default_config
+        measures = default_measures
+        t= t_clear  
+        ch1_v_dips = ch_clear
+        ch2_v_dips = ch_clear
 
-    print(file_name)
-    print(config)
-    print(measures)
-    print(f"ch1- vmax:{vmax1}, vmin:{vmin1}, vpp:{vpp1}")
-    print(f"ch2- vmax:{vmax2}, vmin:{vmin2}, vpp:{vpp2}")
-     
-
-    grafica1 = generate_grafic(t, ch1_v, ch2_v, file_name, measures)
+    grafica1 = generate_grafic(t, ch1_v_dips, ch2_v_dips, file_name, measures)
 
     return render_template("main.html",
                            file=file_path,
@@ -116,8 +122,21 @@ def main():
                            grafica=grafica1)
 
 
+@app.route('/download_pdf')
+def download_pdf():
+    """Genera PDF y lo envía directamente al navegador"""
+    file_path = session.get("file_wav")
+    if not file_path or not os.path.exists(file_path):
+        return "No hay archivo para generar PDF", 400
+    
+    # Generar PDF en memoria
+    output_pdf_path = generate_scope_pdf_report(file_path)  # <-- Ya existe en report.py
+    return send_file(output_pdf_path,
+                     download_name=f"{session.get('original_name','Report')}.pdf",
+                     mimetype="application/pdf",
+                     as_attachment=True)
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-

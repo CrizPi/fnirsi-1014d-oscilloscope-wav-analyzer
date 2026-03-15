@@ -277,27 +277,42 @@ def get_scope_measures(file):
     return results
 
 
-def get_scope_raw_data_display(file):
+def get_scope_raw_data_display(file, measures):
+
     with open(file, "rb") as f:
         # CH1 data2: 7000 - 8499
         f.seek(7000)
-        ch1_raw = f.read(1500)  # 750 muestras * 2 bytes
+        ch1_raw = f.read(1500)
+
         # CH2 data2: 8500 - 9999
         f.seek(8500)
-        ch2_raw = f.read(1500)  # 750 muestras * 2 bytes
+        ch2_raw = f.read(1500)
 
     ch1 = []
     ch2 = []
 
     for i in range(750):
+
         v1 = int.from_bytes(ch1_raw[i*2:i*2+2], "little")
         v2 = int.from_bytes(ch2_raw[i*2:i*2+2], "little")
+
         ch1.append(v1)
         ch2.append(v2)
 
+    # ---- Verificar si el canal está vacío según measures ----
+
+    ch1_empty = all(measures[key][0] == 0 for key in ["Vmax","Vmin","Vavg","Vrms","Vpp","Vp"])
+    ch2_empty = all(measures[key][1] == 0 for key in ["Vmax","Vmin","Vavg","Vrms","Vpp","Vp"])
+
+    if ch1_empty:
+        ch1 = [0] * len(ch1)
+
+    if ch2_empty:
+        ch2 = [0] * len(ch2)
+
     return ch1, ch2
 
-def get_scope_raw_data_complete(file):
+def get_scope_raw_data_complete(file, measures):
 
     with open(file, "rb") as f:
 
@@ -317,5 +332,16 @@ def get_scope_raw_data_complete(file):
 
         ch1.append(v1)
         ch2.append(v2)
+
+    # ---- Verificar si el canal está vacío según measures ----
+
+    ch1_empty = all(measures[key][0] == 0 for key in ["Vmax","Vmin","Vavg","Vrms","Vpp","Vp"])
+    ch2_empty = all(measures[key][1] == 0 for key in ["Vmax","Vmin","Vavg","Vrms","Vpp","Vp"])
+
+    if ch1_empty:
+        ch1 = [0] * len(ch1)
+
+    if ch2_empty:
+        ch2 = [0] * len(ch2)
 
     return ch1, ch2
