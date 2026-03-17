@@ -37,28 +37,27 @@ body{
     color: white;
 }
 
-.upload-file{
+.svg{
     height: 50px;
     aspect-ratio: 1/1;
     background-color: transparent;
     border: none;
     color: white;
     cursor: pointer;
+}
+
+.svg:hover{
+    color: #F2E30F;
+}
+
+#left{
     margin-left: 200px;
 }
-.reset{
-    height: 50px;
-    aspect-ratio: 1/1;
-    background-color: transparent;
-    border: none;
-    color: white;
-    cursor: pointer;
-}
-.reset:hover{
-    color: #F2E30F;
-}
-.upload-file:hover{
-    color: #F2E30F;
+
+.download{
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 #upload-file-form{

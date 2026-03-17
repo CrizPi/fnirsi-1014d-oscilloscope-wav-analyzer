@@ -57,7 +57,7 @@ def format_measure_value(key, channel, measures):
 # GENERACIÓN DE GRÁFICA PARA PDF
 # ==========================================================
 
-def generate_grafic_pdf(t, ch1, ch2, file_name, measures=None, show_empty=False):
+def generate_grafic_download(t, ch1, ch2, file_name, measures=None, show_empty=False):
 
     if len(t) > 0:
 
@@ -318,3 +318,42 @@ def generate_scope_pdf_report(file_path):
     os.unlink(graph_path)
 
     return output_pdf.name
+
+
+from flask import Response
+
+def generate_measures_latex(measures):
+    latex = r"""
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+Parámetro & X & Y \\
+\hline
+"""
+
+    rows = [
+        ("Vmax", f"{measures['Vmax'][0]} V", f"{measures['Vmax'][1]} V"),
+        ("Vmin", f"{measures['Vmin'][0]} V", f"{measures['Vmin'][1]} V"),
+        ("Vavg", f"{measures['Vavg'][0]} V", f"{measures['Vavg'][1]} V"),
+        ("Vrms", f"{measures['Vrms'][0]} Vrms", f"{measures['Vrms'][1]} Vrms"),
+        ("Vpp", f"{measures['Vpp'][0]} Vpp", f"{measures['Vpp'][1]} Vpp"),
+        ("Vp", f"{measures['Vp'][0]} Vp", f"{measures['Vp'][1]} Vp"),
+        ("Freq", f"{measures['Freq'][0]} {measures['freq_units'][0]}", f"{measures['Freq'][1]} {measures['freq_units'][1]}"),
+        ("Cycle", f"{measures['Cycle'][0]} {measures['cycle_units'][0]}", f"{measures['Cycle'][1]} {measures['cycle_units'][1]}"),
+        ("Time+", f"{measures['Time+'][0]} {measures['time_plus_units'][0]}", f"{measures['Time+'][1]} {measures['time_plus_units'][1]}"),
+        ("Time-", f"{measures['Time-'][0]} {measures['time_minus_units'][0]}", f"{measures['Time-'][1]} {measures['time_minus_units'][1]}"),
+        ("Duty+", f"{measures['Duty+'][0]} \\%", f"{measures['Duty+'][1]} \\%"),
+        ("Duty-", f"{measures['Duty-'][0]} \\%", f"{measures['Duty-'][1]} \\%")
+    ]
+
+    for r in rows:
+        latex += f"{r[0]} & {r[1]} & {r[2]} \\\\\n\\hline\n"
+
+    latex += r"""
+\end{tabular}
+\caption{Oscilloscope Measurements}
+\end{table}
+"""
+
+    return latex

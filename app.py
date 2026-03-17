@@ -1,11 +1,11 @@
-from flask import Flask, render_template, request, session, send_file  # <-- Agregar send_file
+from flask import Flask, render_template, request, session, send_file, Response # <-- Agregar send_file
 import numpy as np
 import os
 import uuid  # Para generar nombres únicos
 from file_analizer import get_scope_config, get_scope_measures, get_scope_raw_data_display,get_scope_raw_data_complete
 from plot_maker import generate_grafic
 from signal_analyzer import get_scope_fs_and_time, calculate_frequency, convert_scope_data
-from report import generate_scope_pdf_report
+from report import generate_grafic_download, generate_measures_latex
 
 
 app = Flask(__name__)
@@ -21,7 +21,6 @@ def cleanup_file():
     if file_path and os.path.exists(file_path):
         try:
             os.remove(file_path)
-            print(f"Archivo eliminado: {file_path}")
         except Exception as e:
             print(f"Error al eliminar {file_path}: {e}")
 
@@ -66,15 +65,6 @@ def main():
             ch1_comp, ch2_comp = get_scope_raw_data_complete(file_path,measures)
             fs, t= get_scope_fs_and_time(ch1_disp, config)
             ch1_v_dips,ch2_v_dips= convert_scope_data(ch1_disp, ch2_disp, config, measures)
-
-            vmax1=max(ch1_v_dips)
-            vmax2=max(ch2_v_dips)
-            vmin1=min(ch1_v_dips)
-            vmin2=min(ch2_v_dips)
-            vpp1=vmax1-vmin1
-            vpp2=vmax2-vmin2
-            print(f"ch1- vmax:{vmax1}, vmin:{vmin1}, vpp:{vpp1}")
-            print(f"ch2- vmax:{vmax2}, vmin:{vmin2}, vpp:{vpp2}")
             
             # Guardar info ligera en sesión
             session["file_wav"] = file_path
@@ -122,20 +112,63 @@ def main():
                            grafica=grafica1)
 
 
-@app.route('/download_pdf')
-def download_pdf():
-    """Genera PDF y lo envía directamente al navegador"""
-    file_path = session.get("file_wav")
-    if not file_path or not os.path.exists(file_path):
-        return "No hay archivo para generar PDF", 400
-    
-    # Generar PDF en memoria
-    output_pdf_path = generate_scope_pdf_report(file_path)  # <-- Ya existe en report.py
-    return send_file(output_pdf_path,
-                     download_name=f"{session.get('original_name','Report')}.pdf",
-                     mimetype="application/pdf",
-                     as_attachment=True)
+@app.route('/download_latex')
+def download_latex():
 
+    measures = session.get("measures")
+
+    if not measures:
+        return "No hay datos de medidas", 400
+
+    latex_code = generate_measures_latex(measures)
+
+    return Response(
+        latex_code,
+        mimetype="text/plain",
+        headers={
+            "Content-Disposition": "attachment;filename=measures_table.tex"
+        }
+    )
+
+
+@app.route('/download_graph')
+def download_graph():
+
+    file_path = session.get("file_wav")
+
+    if not file_path or not os.path.exists(file_path):
+        return "No hay archivo cargado", 400
+
+    config = session.get("config")
+    measures = session.get("measures")
+    file_name = session.get("original_name","graph")
+
+    ch1_disp, ch2_disp = get_scope_raw_data_display(file_path, measures)
+
+    ch1_v_dips, ch2_v_dips = convert_scope_data(
+        ch1_disp,
+        ch2_disp,
+        config,
+        measures
+    )
+
+    fs, t = get_scope_fs_and_time(ch1_disp, config)
+
+    # generar imagen
+    png_path = generate_grafic_download(
+        t,
+        ch1_v_dips,
+        ch2_v_dips,
+        file_name,
+        measures
+    )
+
+    return send_file(
+        png_path,
+        mimetype="image/png",
+        as_attachment=True,
+        download_name=f"{file_name}_graph.png"
+    )
 
 
 if __name__ == '__main__':
