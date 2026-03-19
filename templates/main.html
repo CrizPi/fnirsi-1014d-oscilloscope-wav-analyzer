@@ -19,11 +19,13 @@
         </div>
     </header>
 
+    <!-- FRAGMENT:alert-host:start -->
     <div id="alertHost">
         {% if error_message %}
         <div class="alert">{{ error_message }}</div>
         {% endif %}
     </div>
+    <!-- FRAGMENT:alert-host:end -->
 
     <section class="panel" id="uploadPanel">
         <form method="POST" id="upload-file-form" enctype="multipart/form-data">
@@ -47,6 +49,7 @@
         </div>
     </section>
 
+    <!-- FRAGMENT:measures-panel:start -->
     <section class="panel" id="measuresPanel">
         <h2>Oscilloscope Configuration</h2>
         <table class="data-table">
@@ -120,7 +123,8 @@
             <button {% if not file %}disabled{% endif %} class="filtro" data-target="snapshots">Snapshots</button>
         </div>
 
-        <div class="contenido math">
+        <!-- FRAGMENT:module-math:start -->
+        <div class="contenido math" id="module-math">
             <form method="POST" class="math-actions">
                 <button {% if not file %}disabled{% endif %} class="filtro_btn" name="math_op" value="add">X + Y</button>
                 <button {% if not file %}disabled{% endif %} class="filtro_btn" name="math_op" value="sub">X - Y</button>
@@ -162,8 +166,10 @@
                 </button>
             </form>
         </div>
+        <!-- FRAGMENT:module-math:end -->
 
-        <div class="contenido fft">
+        <!-- FRAGMENT:module-fft:start -->
+        <div class="contenido fft" id="module-fft">
             <form method="POST" class="fft-form">
                 <input type="hidden" name="fft_apply" value="1">
                 <label>Channel
@@ -245,8 +251,10 @@
                 </button>
             </form>
         </div>
+        <!-- FRAGMENT:module-fft:end -->
 
-        <div class="contenido stat">
+        <!-- FRAGMENT:module-stat:start -->
+        <div class="contenido stat" id="module-stat">
             <div class="section-header">
                 <h2>Statistical Analysis</h2>
                 <div class="inline-actions">
@@ -271,8 +279,10 @@
                 </tbody>
             </table>
         </div>
+        <!-- FRAGMENT:module-stat:end -->
 
-        <div class="contenido advanced">
+        <!-- FRAGMENT:module-advanced:start -->
+        <div class="contenido advanced" id="module-advanced">
             <div class="section-header">
                 <h2>Advanced Measurements</h2>
                 <div class="inline-actions">
@@ -294,8 +304,10 @@
                 </tbody>
             </table>
         </div>
+        <!-- FRAGMENT:module-advanced:end -->
 
-        <div class="contenido correlation">
+        <!-- FRAGMENT:module-correlation:start -->
+        <div class="contenido correlation" id="module-correlation">
             <div class="section-header">
                 <h2>Channel Correlation</h2>
                 <div class="inline-actions">
@@ -317,8 +329,10 @@
                 </button>
             </form>
         </div>
+        <!-- FRAGMENT:module-correlation:end -->
 
-        <div class="contenido calculus">
+        <!-- FRAGMENT:module-calculus:start -->
+        <div class="contenido calculus" id="module-calculus">
             <div class="section-header"><h2>Derivative & Integral</h2></div>
             <form method="POST" class="fft-form">
                 <input type="hidden" name="calculus_apply" value="1">
@@ -340,8 +354,10 @@
             <div class="graph-frame"><img src="data:image/png;base64,{{ calculus_data.integral_graph }}" alt="Integral graph"></div>
             <form class="download" action="{{ url_for('download_integral_graph') }}" method="get"><span>Download integral</span><button class="svg" type="submit" {% if not file or not calculus_data.enabled %}disabled{% endif %}><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg></button></form>
         </div>
+        <!-- FRAGMENT:module-calculus:end -->
 
-        <div class="contenido calibration">
+        <!-- FRAGMENT:module-calibration:start -->
+        <div class="contenido calibration" id="module-calibration">
             <div class="section-header">
                 <h2>Calibration and Normalization</h2>
                 <div class="inline-actions">
@@ -362,8 +378,10 @@
                 <button class="filtro_btn" type="submit" {% if not file %}disabled{% endif %}>Apply calibration</button>
             </form>
         </div>
+        <!-- FRAGMENT:module-calibration:end -->
 
-        <div class="contenido cursor">
+        <!-- FRAGMENT:module-cursor:start -->
+        <div class="contenido cursor" id="module-cursor">
             <div class="section-header">
                 <h2>Manual Measurement</h2>
                 <div class="inline-actions">
@@ -425,8 +443,10 @@
                 </button>
             </form>
         </div>
+        <!-- FRAGMENT:module-cursor:end -->
 
-        <div class="contenido cycle">
+        <!-- FRAGMENT:module-cycle:start -->
+        <div class="contenido cycle" id="module-cycle">
             <div class="section-header">
                 <h2>Cycle Analysis</h2>
                 <div class="inline-actions">
@@ -454,8 +474,10 @@
                 <div class="fft-card"><span>Average RMS</span><strong>{{ cycle_data.avg_rms }} V</strong></div>
             </div>
         </div>
+        <!-- FRAGMENT:module-cycle:end -->
 
-        <div class="contenido snapshots">
+        <!-- FRAGMENT:module-snapshots:start -->
+        <div class="contenido snapshots" id="module-snapshots">
             <div class="section-header">
                 <h2>Snapshots and Comparison</h2>
                 <div class="inline-actions">
@@ -501,10 +523,14 @@
                 <div class="fft-card"><span>Delta Freq Y</span><strong>{{ comparison_data.delta_freq_y }} {{ comparison_data.delta_freq_y_unit }}</strong></div>
             </div>
         </div>
+        <!-- FRAGMENT:module-snapshots:end -->
     </section>
+    <!-- FRAGMENT:measures-panel:end -->
 
     <div class="toast" id="toast" hidden></div>
+    <!-- FRAGMENT:page-state:start -->
     <div id="pageState" data-toast-message="{{ toast_message or '' }}" data-toast-variant="{{ toast_variant or 'success' }}"></div>
+    <!-- FRAGMENT:page-state:end -->
 
     <script>
     let toastTimer = null;
@@ -560,54 +586,27 @@
         updateCursorOverlay();
     }
 
-    function replaceNodeIfPresent(doc, id) {
+    function replaceNodeFromHtml(id, html) {
+        if (!html) return;
         const current = document.getElementById(id);
-        const next = doc.getElementById(id);
-        if (current && next) {
+        if (!current) return;
+        const template = document.createElement("template");
+        template.innerHTML = html.trim();
+        const next = template.content.firstElementChild;
+        if (next) {
             current.replaceWith(next);
         }
     }
 
-    function replaceModuleSection(doc, sectionClass) {
-        if (!sectionClass) return;
-        const current = document.querySelector(`#modulePanel .contenido.${sectionClass}`);
-        const next = doc.querySelector(`#modulePanel .contenido.${sectionClass}`);
-        if (current && next) {
-            current.replaceWith(next);
+    function applyAjaxFragments(payload, previousScrollY) {
+        replaceNodeFromHtml("alertHost", payload.alertHost);
+        replaceNodeFromHtml("pageState", payload.pageState);
+        if (payload.moduleSectionId && payload.moduleSection) {
+            replaceNodeFromHtml(payload.moduleSectionId, payload.moduleSection);
         }
-    }
-
-    function getSectionClassForAction(actionName) {
-        const sectionMap = {
-            math_op: "math",
-            fft_apply: "fft",
-            statistics_apply: "stat",
-            advanced_apply: "advanced",
-            calculus_apply: "calculus",
-            correlation_apply: "correlation",
-            calibration_apply: "calibration",
-            cursor_apply: "cursor",
-            cycle_apply: "cycle",
-            save_snapshot: "snapshots",
-            compare_apply: "snapshots",
-        };
-        return sectionMap[actionName] || "";
-    }
-
-    function applyResponseDom(doc, actionName, previousScrollY) {
-        replaceNodeIfPresent(doc, "alertHost");
-        replaceNodeIfPresent(doc, "pageState");
-        replaceModuleSection(doc, getSectionClassForAction(actionName));
-
-        if (actionName === "calibration_apply") {
-            replaceNodeIfPresent(doc, "measuresPanel");
+        if (payload.measuresPanel) {
+            replaceNodeFromHtml("measuresPanel", payload.measuresPanel);
         }
-
-        if (actionName === "upload-file") {
-            replaceNodeIfPresent(doc, "uploadPanel");
-            replaceNodeIfPresent(doc, "measuresPanel");
-        }
-
         initializeDynamicUI();
         activateFilter(localStorage.getItem("selectedFilter") || "math");
         const pageState = document.getElementById("pageState");
@@ -642,7 +641,6 @@
 
     async function submitModuleForm(form) {
         const formData = new FormData(form);
-        const actionName = getModuleActionName(formData);
         const previousScrollY = window.scrollY;
         const response = await fetch(form.getAttribute("action") || window.location.pathname, {
             method: "POST",
@@ -650,12 +648,12 @@
             credentials: "same-origin",
             headers: { "X-Requested-With": "XMLHttpRequest" },
         });
-        const html = await response.text();
+        const payload = await response.json();
         if (!response.ok) {
-            throw new Error(html || "Action failed.");
+            applyAjaxFragments(payload, previousScrollY);
+            throw new Error(payload?.error || "Action failed.");
         }
-        const doc = new DOMParser().parseFromString(html, "text/html");
-        applyResponseDom(doc, actionName, previousScrollY);
+        applyAjaxFragments(payload, previousScrollY);
     }
 
     const fileInput = document.getElementById("file");

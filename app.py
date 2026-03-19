@@ -1,5 +1,6 @@
 import atexit
 import os
+import re
 import socket
 import time
 import uuid
@@ -7,7 +8,7 @@ from datetime import datetime
 from threading import Lock, Thread
 
 import numpy as np
-from flask import Flask, Response, after_this_request, render_template, request, send_file, session
+from flask import Flask, Response, after_this_request, jsonify, render_template, request, send_file, session
 from werkzeug.utils import secure_filename
 import webview
 
@@ -137,6 +138,19 @@ GRAPH_CACHE = {}
 CACHE_LOCK = Lock()
 MAX_CACHE_ITEMS = 32
 MAIN_WINDOW = None
+AJAX_MODULE_ACTIONS = {
+    "math",
+    "fft",
+    "statistics",
+    "advanced",
+    "calculus",
+    "correlation",
+    "calibration",
+    "cursor",
+    "cycle",
+    "snapshot",
+    "comparison",
+}
 
 
 class DesktopApi:
@@ -962,6 +976,53 @@ def cleanup_temp_download(file_path):
         return response
 
 
+def is_ajax_request():
+    return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def extract_template_fragment(rendered_html, fragment_name):
+    pattern = re.compile(
+        rf"<!-- FRAGMENT:{re.escape(fragment_name)}:start -->(.*?)<!-- FRAGMENT:{re.escape(fragment_name)}:end -->",
+        re.DOTALL,
+    )
+    match = pattern.search(rendered_html)
+    return match.group(1).strip() if match else ""
+
+
+def build_ajax_fragment_response(rendered_html, action_name, error_message=None):
+    section_map = {
+        "math": "module-math",
+        "fft": "module-fft",
+        "statistics": "module-stat",
+        "advanced": "module-advanced",
+        "calculus": "module-calculus",
+        "correlation": "module-correlation",
+        "calibration": "module-calibration",
+        "cursor": "module-cursor",
+        "cycle": "module-cycle",
+        "snapshot": "module-snapshots",
+        "comparison": "module-snapshots",
+    }
+
+    fragments = {
+        "alertHost": extract_template_fragment(rendered_html, "alert-host"),
+        "pageState": extract_template_fragment(rendered_html, "page-state"),
+    }
+
+    section_fragment = section_map.get(action_name)
+    if section_fragment:
+        fragments["moduleSection"] = extract_template_fragment(rendered_html, section_fragment)
+        fragments["moduleSectionId"] = section_fragment
+
+    if action_name == "calibration":
+        fragments["measuresPanel"] = extract_template_fragment(rendered_html, "measures-panel")
+
+    if error_message:
+        fragments["error"] = error_message
+
+    return jsonify(fragments)
+
+
 def should_refresh_all(action_name):
     return action_name in {"upload", "math", "calibration"}
 
@@ -1297,7 +1358,10 @@ def main():
 
     file_path = session.get("file_wav")
     if not file_path or not os.path.exists(file_path):
-        return render_template("main.html", **build_empty_view(error_message=error_message, toast_message=toast_message, toast_variant=toast_variant))
+        rendered_html = render_template("main.html", **build_empty_view(error_message=error_message, toast_message=toast_message, toast_variant=toast_variant))
+        if is_ajax_request() and action_name in AJAX_MODULE_ACTIONS:
+            return build_ajax_fragment_response(rendered_html, action_name, error_message=error_message), 400
+        return rendered_html
 
     try:
         context = prepare_analysis_context(action_name)
@@ -1309,10 +1373,12 @@ def main():
         store_enabled_views(context)
     except (OSError, ScopeFileError, ValueError, ZeroDivisionError) as exc:
         clear_loaded_state()
-        return render_template("main.html", **build_empty_view(f"No se pudo procesar el archivo: {exc}"))
+        rendered_html = render_template("main.html", **build_empty_view(f"No se pudo procesar el archivo: {exc}"))
+        if is_ajax_request() and action_name in AJAX_MODULE_ACTIONS:
+            return build_ajax_fragment_response(rendered_html, action_name, error_message=f"No se pudo procesar el archivo: {exc}"), 400
+        return rendered_html
 
-    return render_template(
-        "main.html",
+    template_context = dict(
         file=context["file_path"],
         file_name=context["file_name"],
         config=context["config"],
@@ -1336,6 +1402,12 @@ def main():
         toast_message=toast_message,
         toast_variant=toast_variant,
     )
+
+    rendered_html = render_template("main.html", **template_context)
+    if is_ajax_request() and action_name in AJAX_MODULE_ACTIONS:
+        return build_ajax_fragment_response(rendered_html, action_name)
+
+    return rendered_html
 
 
 @app.route("/download_latex")
