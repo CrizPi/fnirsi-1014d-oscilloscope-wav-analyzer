@@ -1,5 +1,5 @@
 Flask
+Werkzeug
 numpy
 scipy
-plotly
 matplotlib

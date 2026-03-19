@@ -1,306 +1,96 @@
-# report.py - OPTIMIZADO Y REESTRUCTURADO
-
-import os
-import tempfile
-import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from typing import Optional, Union, List
+from plot_maker import (
+    generate_correlation_grafic_file,
+    generate_fft_grafic_file,
+    generate_grafic_file,
+    generate_signal_analysis_grafic_file,
+)
 
 
-# ==========================================================
-# HELPERS GENERALES
-# ==========================================================
+def _latex_escape(value):
+    text = str(value)
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "_": r"\_",
+        "%": r"\%",
+        "&": r"\&",
+        "#": r"\#",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
 
-ENG_SCALES = [
-    (1e-12, 'p'), (1e-9, 'n'), (1e-6, 'µ'),
-    (1e-3, 'm'), (1, ''), (1e3, 'k'), (1e6, 'M')
-]
-
-
-def to_numpy(arr):
-    return np.array(arr) if arr is not None else np.array([])
-
-
-def safe_max(val):
-    return val if (val != 0 and not np.isnan(val)) else 1
-
-
-def safe_range(min_val, max_val):
-    return (min_val, max_val + 1e-9) if min_val == max_val else (min_val, max_val)
-
-
-def is_empty_signal(signal):
-    return signal is None or len(signal) == 0 or np.all(np.array(signal) == 0)
-
-
-def scale_time_axis(t):
-    if len(t) == 0:
-        return t, ''
-
-    max_t = np.max(np.abs(t))
-
-    for factor, sym in ENG_SCALES:
-        if max_t < factor * 1000:
-            return t / factor, sym
-
-    return t, ''
-
-
-def save_figure(fig):
-    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-        fig.savefig(
-            tmp.name,
-            format="png",
-            bbox_inches="tight",
-            facecolor=fig.get_facecolor(),
-            dpi=150
-        )
-        return tmp.name
-
-
-# ==========================================================
-# FORMATEO DE MEDIDAS
-# ==========================================================
-
-def format_measure_value(key, channel, measures):
-
-    value = measures[key][channel]
-
-    if key in ["Vmax", "Vmin", "Vavg", "Vrms", "Vpp", "Vp"]:
-        return f"{value} V"
-
-    if key == "Freq":
-        return f"{value * measures['freq_multiplier'][channel]} {measures['freq_units'][channel]}"
-
-    if key == "Cycle":
-        return f"{value * measures['cycle_multiplier'][channel]} {measures['cycle_units'][channel]}"
-
-    if key == "Time+":
-        return f"{value * measures['time_plus_multiplier'][channel]} {measures['time_plus_units'][channel]}"
-
-    if key == "Time-":
-        return f"{value * measures['time_minus_multiplier'][channel]} {measures['time_minus_units'][channel]}"
-
-    if key in ["Duty+", "Duty-"]:
-        return f"{value} %"
-
-    return str(value)
-
-
-# ==========================================================
-# CONFIGURACIÓN DE EJES
-# ==========================================================
-
-def configure_axes(ax, ax2=None):
-    ax.set_facecolor('#FFFFFF')
-    for spine in ax.spines.values():
-        spine.set_color('#000000')
-        spine.set_linewidth(1)
-
-    ax.grid(True, which='major', color='#C0C0C0', linewidth=0.6)
-    ax.minorticks_on()
-    ax.grid(True, which='minor', color='#E6E6E6', linewidth=0.4)
-    ax.tick_params(colors='#000000')
-
-    if ax2:
-        ax2.set_facecolor('#FFFFFF')
-        ax2.spines['right'].set_color('#000000')
-        ax2.spines['right'].set_linewidth(1)
-        ax2.grid(True, which='major', color='#C0C0C0', linewidth=0.6)
-        ax2.minorticks_on()
-        ax2.grid(True, which='minor', color='#E6E6E6', linewidth=0.4)
-        ax2.tick_params(colors='#000000')
-
-
-def configure_time_ticks(ax, t_scaled):
-    if len(t_scaled) > 1:
-        t_min, t_max = safe_range(np.min(t_scaled), np.max(t_scaled))
-        ax.set_xticks(np.linspace(t_min, t_max, 19))
-
-
-def configure_y_axes(ax, ax2, ch1, ch2, divisions=8):
-    max1 = safe_max(np.max(np.abs(ch1)) if len(ch1) > 0 else 1) * 1.2
-    max2 = safe_max(np.max(np.abs(ch2)) if len(ch2) > 0 else 1) * 1.2
-
-    step1 = max1 / (divisions / 2)
-    step2 = max2 / (divisions / 2)
-
-    y1 = np.arange(-divisions/2, divisions/2 + 1) * step1
-    y2 = np.arange(-divisions/2, divisions/2 + 1) * step2
-
-    ax.set_ylim(y1[0], y1[-1])
-    ax.set_yticks(y1)
-
-    if ax2:
-        ax2.set_ylim(y2[0], y2[-1])
-        ax2.set_yticks(y2)
-
-
-# ==========================================================
-# GRÁFICA NORMAL
-# ==========================================================
 
 def generate_grafic_download(t, ch1, ch2, file_name, measures=None, show_empty=False):
-
-    t = to_numpy(t)
-    ch1 = to_numpy(ch1)
-    ch2 = to_numpy(ch2)
-
-    t_scaled, prefix = scale_time_axis(t)
-
-    fig, ax = plt.subplots(figsize=(16, 6))
-    ax2 = ax.twinx()
-
-    fig.patch.set_facecolor('#FFFFFF')
-
-    configure_axes(ax, ax2)
-
-    ax.set_xlabel(f"Time ({prefix}s)", color="#000000")
-    ax.set_ylabel("Voltage X (V)", color="#000000")
-    ax2.set_ylabel("Voltage Y (V)", color="#000000")
-
-    configure_time_ticks(ax, t_scaled)
-    configure_y_axes(ax, ax2, ch1, ch2)
-
-    lines = []
-
-    if len(ch1) > 0:
-        l1, = ax.plot(t_scaled[:len(ch1)], ch1, color='#0033CC', linewidth=2, label='X')
-        lines.append(l1)
-
-    if len(ch2) > 0:
-        l2, = ax2.plot(t_scaled[:len(ch2)], ch2, color='#CC0000', linewidth=2, label='Y')
-        lines.append(l2)
-
-    if lines:
-        leg = ax.legend(lines, [l.get_label() for l in lines], loc='upper right')
-        leg.get_frame().set_facecolor('#FFFFFF')
-        leg.get_frame().set_edgecolor('#000000')
-
-    plt.title(file_name, color='#000000')
-
-    path = save_figure(fig)
-    plt.close()
-
-    return path
+    return generate_grafic_file(t, ch1, ch2, file_name, measures=measures, show_empty=show_empty)
 
 
-def generate_grafic_download_math(t: Optional[list], ch1: Optional[list], 
-                                ch2: Optional[list], file_name: str,
-                                math_result: Optional[list] = None) -> str:
-    """
-    Genera gráfico de osciloscopio con estilo blanco profesional.
-    
-    Args:
-        t: Array de tiempo
-        ch1: Señal canal 1 (azul)
-        ch2: Señal canal 2 (rojo)  
-        file_name: Nombre para título y referencia
-        math_result: Señal matemática (magenta)
-    
-    Returns:
-        Ruta temporal al archivo PNG generado
-    """
-    # Normalización de arrays
-    t = np.array(t) if t is not None else np.array([])
-    ch1 = np.array(ch1) if ch1 is not None else np.array([])
-    ch2 = np.array(ch2) if ch2 is not None else np.array([])
-    math_result = np.array(math_result) if math_result is not None else None
-    
-    # Determinar modo de visualización
-    is_math_only = (math_result is not None and len(math_result) > 0 and 
-                   is_empty_signal(ch1) and is_empty_signal(ch2))
-    
-    # Escala de tiempo
-    t_scaled, time_prefix = get_time_scale(t)
-    
-    # Configurar figura
-    fig, ax, ax2 = setup_figure(is_math_only)
-    ax.set_xlabel(f"Time ({time_prefix}s)", color="#000000")
-    
-    # Ejes centrales
-    ax.axhline(0, color='#000000', linewidth=1)
-    ax.axvline(0, color='#000000', linewidth=1)
-    
-    # Configurar ticks
-    setup_xticks(ax, t_scaled)
-    setup_yticks(ax, ax2, ch1, ch2, math_result, is_math_only)
-    
-    # Plotear señales
-    lines = plot_signals(ax, ax2, t_scaled, ch1, ch2, math_result, is_math_only)
-    
-    # Leyenda
-    setup_legend(ax, lines)
-    
-    plt.title(file_name, color='#000000')
-    
-    # Exportar PNG
-    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-        plt.savefig(tmp.name, format="png", bbox_inches="tight", 
-                   facecolor=fig.get_facecolor(), dpi=150)
-        path = tmp.name
-    
-    plt.close()
-    return path
+def generate_grafic_download_math(t, ch1, ch2, file_name, math_result=None):
+    return generate_grafic_file(t, ch1, ch2, file_name, math_result=math_result, show_empty=True)
 
 
-# ==========================================================
-# LATEX (SIN CAMBIOS FUNCIONALES)
-# ==========================================================
+def generate_fft_grafic_download(
+    frequencies_hz,
+    magnitudes,
+    file_name,
+    channel_label,
+    scale_mode="linear",
+    dominant_frequency_hz=0.0,
+):
+    return generate_fft_grafic_file(
+        frequencies_hz,
+        magnitudes,
+        file_name,
+        channel_label,
+        scale_mode=scale_mode,
+        dominant_frequency_hz=dominant_frequency_hz,
+    )
+
+
+def generate_signal_analysis_download(t, signal, title, y_label):
+    return generate_signal_analysis_grafic_file(t, signal, title, y_label)
+
+
+def generate_correlation_grafic_download(lags_seconds, correlation, title, marker_x=None, marker_y=None):
+    return generate_correlation_grafic_file(lags_seconds, correlation, title, marker_x=marker_x, marker_y=marker_y)
+
 
 def generate_latex_table(rows, caption="Tabla", headers=("X", "Y")):
-    """
-    Genera código LaTeX para una tabla genérica.
+    has_third_column = bool(headers[1])
 
-    rows: lista de tuplas -> [(col1, col2, col3), ...]
-    caption: título de la tabla
-    headers: encabezados de columnas
-    """
-
-    for r in rows:
-        if r[2]:
-            latex = r"""
-            \begin{table}[h]
-            \centering
-            \begin{tabular}{|c|c|c|}
-            \hline
-            """
-        else:
-            latex = r"""
-            \begin{table}[h]
-            \centering
-            \begin{tabular}{|c|c|}
-            \hline
-            """
-
-
-    # Encabezados
-    if  headers[1]:
-        latex += f"Measure & {headers[0]} & {headers[1]} \\\\\n\\hline\n"
+    if has_third_column:
+        latex = r"""
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+"""
+        latex += f"Measure & {_latex_escape(headers[0])} & {_latex_escape(headers[1])} \\\\\n\\hline\n"
     else:
-        latex += f"Measure & {headers[0]} \\\\\n\\hline\n"
+        latex = r"""
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+"""
+        latex += f"Measure & {_latex_escape(headers[0])} \\\\\n\\hline\n"
 
-    # Filas
-    for r in rows:
-        if r[2]:
-            latex += f"{r[0]} & {r[1]} & {r[2]} \\\\\n\\hline\n"
+    for row in rows:
+        if has_third_column:
+            measure, value_1, value_2 = row
+            latex += f"{_latex_escape(measure)} & {_latex_escape(value_1)} & {_latex_escape(value_2)} \\\\\n\\hline\n"
         else:
-            latex += f"{r[0]} & {r[1]} \\\\\n\\hline\n"
+            measure, value_1, _ = row
+            latex += f"{_latex_escape(measure)} & {_latex_escape(value_1)} \\\\\n\\hline\n"
 
     latex += f"""
 \\end{{tabular}}
-\\caption{{{caption}}}
+\\caption{{{_latex_escape(caption)}}}
 \\end{{table}}
 """
-
     return latex
 
 
-
 def generate_measures_latex(measures):
-
     rows = [
         ("Vmax", f"{measures['Vmax'][0]} V", f"{measures['Vmax'][1]} V"),
         ("Vmin", f"{measures['Vmin'][0]} V", f"{measures['Vmin'][1]} V"),
@@ -313,21 +103,12 @@ def generate_measures_latex(measures):
         ("Time+", f"{measures['Time+'][0]} {measures['time_plus_units'][0]}", f"{measures['Time+'][1]} {measures['time_plus_units'][1]}"),
         ("Time-", f"{measures['Time-'][0]} {measures['time_minus_units'][0]}", f"{measures['Time-'][1]} {measures['time_minus_units'][1]}"),
         ("Duty+", f"{measures['Duty+'][0]} \\%", f"{measures['Duty+'][1]} \\%"),
-        ("Duty-", f"{measures['Duty-'][0]} \\%", f"{measures['Duty-'][1]} \\%")
+        ("Duty-", f"{measures['Duty-'][0]} \\%", f"{measures['Duty-'][1]} \\%"),
     ]
+    return generate_latex_table(rows, caption="Oscilloscope Measurements")
 
-    caption = "Oscilloscope Measurements"
-
-    return generate_latex_table(
-        rows,
-        caption=caption,
-    )
 
 def generate_math_measures_latex(math_measures, operation=None):
-    """
-    Genera tabla LaTeX para medidas MATH (una sola columna de datos).
-    """
-
     rows = [
         ("Vmax", f"{math_measures['Vmax']} V", ""),
         ("Vmin", f"{math_measures['Vmin']} V", ""),
@@ -340,15 +121,169 @@ def generate_math_measures_latex(math_measures, operation=None):
         ("Time+", f"{math_measures['Time+']} {math_measures['time_plus_unit']}", ""),
         ("Time-", f"{math_measures['Time-']} {math_measures['time_minus_unit']}", ""),
         ("Duty+", f"{math_measures['Duty+']} \\%", ""),
-        ("Duty-", f"{math_measures['Duty-']} \\%", "")
+        ("Duty-", f"{math_measures['Duty-']} \\%", ""),
     ]
-
     caption = "Oscilloscope MATH Measurements"
     if operation:
         caption += f" ({operation})"
+    return generate_latex_table(rows, caption=caption, headers=("Value", ""))
 
-    return generate_latex_table(
-        rows,
-        caption=caption,
-        headers=("Value", "")
-    )
+
+def generate_statistics_latex(statistics_data):
+    if statistics_data.get("math_enabled"):
+        latex = r"""
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+Measure & X & Y & MATH \\
+\hline
+"""
+        rows = [
+            ("Mean", f"{statistics_data['X']['mean']} V", f"{statistics_data['Y']['mean']} V", f"{statistics_data['MATH']['mean']} V"),
+            ("Std Dev", f"{statistics_data['X']['std_dev']} V", f"{statistics_data['Y']['std_dev']} V", f"{statistics_data['MATH']['std_dev']} V"),
+            ("Variance", f"{statistics_data['X']['variance']} V^2", f"{statistics_data['Y']['variance']} V^2", f"{statistics_data['MATH']['variance']} V^2"),
+            ("Median", f"{statistics_data['X']['median']} V", f"{statistics_data['Y']['median']} V", f"{statistics_data['MATH']['median']} V"),
+            ("Min", f"{statistics_data['X']['min']} V", f"{statistics_data['Y']['min']} V", f"{statistics_data['MATH']['min']} V"),
+            ("Max", f"{statistics_data['X']['max']} V", f"{statistics_data['Y']['max']} V", f"{statistics_data['MATH']['max']} V"),
+            ("Range", f"{statistics_data['X']['range']} V", f"{statistics_data['Y']['range']} V", f"{statistics_data['MATH']['range']} V"),
+            ("RMS", f"{statistics_data['X']['rms']} V", f"{statistics_data['Y']['rms']} V", f"{statistics_data['MATH']['rms']} V"),
+            ("Peak-to-Peak", f"{statistics_data['X']['peak_to_peak']} V", f"{statistics_data['Y']['peak_to_peak']} V", f"{statistics_data['MATH']['peak_to_peak']} V"),
+        ]
+        for measure, x_value, y_value, math_value in rows:
+            latex += f"{_latex_escape(measure)} & {_latex_escape(x_value)} & {_latex_escape(y_value)} & {_latex_escape(math_value)} \\\\\n\\hline\n"
+        latex += r"""
+\end{tabular}
+\caption{Signal Statistics}
+\end{table}
+"""
+        return latex
+
+    rows = [
+        ("Mean", f"{statistics_data['X']['mean']} V", f"{statistics_data['Y']['mean']} V"),
+        ("Std Dev", f"{statistics_data['X']['std_dev']} V", f"{statistics_data['Y']['std_dev']} V"),
+        ("Variance", f"{statistics_data['X']['variance']} V^2", f"{statistics_data['Y']['variance']} V^2"),
+        ("Median", f"{statistics_data['X']['median']} V", f"{statistics_data['Y']['median']} V"),
+        ("Min", f"{statistics_data['X']['min']} V", f"{statistics_data['Y']['min']} V"),
+        ("Max", f"{statistics_data['X']['max']} V", f"{statistics_data['Y']['max']} V"),
+        ("Range", f"{statistics_data['X']['range']} V", f"{statistics_data['Y']['range']} V"),
+        ("RMS", f"{statistics_data['X']['rms']} V", f"{statistics_data['Y']['rms']} V"),
+        ("Peak-to-Peak", f"{statistics_data['X']['peak_to_peak']} V", f"{statistics_data['Y']['peak_to_peak']} V"),
+    ]
+    return generate_latex_table(rows, caption="Signal Statistics")
+
+
+def generate_advanced_measures_latex(advanced_data):
+    latex = r"""
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+Measure & X & Y & MATH \\
+\hline
+"""
+    rows = [
+        ("Rise Time", f"{advanced_data['X']['rise_time']} {advanced_data['X']['rise_time_unit']}", f"{advanced_data['Y']['rise_time']} {advanced_data['Y']['rise_time_unit']}", f"{advanced_data['MATH']['rise_time']} {advanced_data['MATH']['rise_time_unit']}" if advanced_data.get("math_enabled") else "-"),
+        ("Fall Time", f"{advanced_data['X']['fall_time']} {advanced_data['X']['fall_time_unit']}", f"{advanced_data['Y']['fall_time']} {advanced_data['Y']['fall_time_unit']}", f"{advanced_data['MATH']['fall_time']} {advanced_data['MATH']['fall_time_unit']}" if advanced_data.get("math_enabled") else "-"),
+        ("Overshoot", f"{advanced_data['X']['overshoot']} %", f"{advanced_data['Y']['overshoot']} %", f"{advanced_data['MATH']['overshoot']} %" if advanced_data.get("math_enabled") else "-"),
+        ("Undershoot", f"{advanced_data['X']['undershoot']} %", f"{advanced_data['Y']['undershoot']} %", f"{advanced_data['MATH']['undershoot']} %" if advanced_data.get("math_enabled") else "-"),
+        ("Slew Rate", f"{advanced_data['X']['slew_rate']} {advanced_data['X']['slew_rate_unit']}", f"{advanced_data['Y']['slew_rate']} {advanced_data['Y']['slew_rate_unit']}", f"{advanced_data['MATH']['slew_rate']} {advanced_data['MATH']['slew_rate_unit']}" if advanced_data.get("math_enabled") else "-"),
+        ("Crest Factor", f"{advanced_data['X']['crest_factor']}", f"{advanced_data['Y']['crest_factor']}", f"{advanced_data['MATH']['crest_factor']}" if advanced_data.get("math_enabled") else "-"),
+    ]
+    for measure, x_value, y_value, math_value in rows:
+        latex += f"{_latex_escape(measure)} & {_latex_escape(x_value)} & {_latex_escape(y_value)} & {_latex_escape(math_value)} \\\\\n\\hline\n"
+    latex += r"""
+\end{tabular}
+\caption{Advanced Signal Measures}
+\end{table}
+"""
+    return latex
+
+
+def generate_correlation_latex(correlation_data):
+    rows = [
+        ("Max Correlation", f"{correlation_data['max_correlation']}", ""),
+        ("Delay", f"{correlation_data['delay_value']} {correlation_data['delay_unit']}", ""),
+    ]
+    return generate_latex_table(rows, caption="Channel Correlation", headers=("Value", ""))
+
+
+def generate_fft_latex(fft_data):
+    lines = [
+        r"\section*{FFT Analysis}",
+        rf"Channel: {_latex_escape(fft_data.get('channel', 'X'))}\\",
+        rf"Window: {_latex_escape(fft_data.get('window_type', 'hann'))}\\",
+        rf"Dominant frequency: {_latex_escape(fft_data.get('dominant_frequency', 0))} {_latex_escape(fft_data.get('dominant_frequency_unit', 'Hz'))}\\",
+        rf"Dominant amplitude: {_latex_escape(fft_data.get('dominant_magnitude', 0))} V\\",
+        rf"THD: {_latex_escape(fft_data.get('thd_percent', 0))} \%",
+        "",
+        r"\subsection*{Top Peaks}",
+        r"\begin{tabular}{|c|c|c|}",
+        r"\hline",
+        r"Index & Frequency & Amplitude \\",
+        r"\hline",
+    ]
+    for index, peak in enumerate(fft_data.get("top_peaks", []), start=1):
+        lines.append(
+            f"{index} & {_latex_escape(peak['frequency'])} {_latex_escape(peak['frequency_unit'])} & {_latex_escape(peak['magnitude'])} \\\\"
+        )
+        lines.append(r"\hline")
+    lines.extend([r"\end{tabular}", "", r"\subsection*{Harmonics}", r"\begin{tabular}{|c|c|c|}", r"\hline", r"Order & Frequency & Amplitude \\", r"\hline"])
+    for harmonic in fft_data.get("harmonics", []):
+        lines.append(
+            f"{harmonic['order']} & {_latex_escape(harmonic['frequency'])} {_latex_escape(harmonic['frequency_unit'])} & {_latex_escape(harmonic['magnitude'])} \\\\"
+        )
+        lines.append(r"\hline")
+    lines.append(r"\end{tabular}")
+    return "\n".join(lines)
+
+
+def generate_cursor_latex(cursor_data):
+    rows = [
+        ("t1", f"{cursor_data['t1']} s", ""),
+        ("t2", f"{cursor_data['t2']} s", ""),
+        ("V1", f"{cursor_data['v1']} V", ""),
+        ("V2", f"{cursor_data['v2']} V", ""),
+        ("Delta t", f"{cursor_data['delta_t']} {cursor_data['delta_t_unit']}", ""),
+        ("Delta V", f"{cursor_data['delta_v']} V", ""),
+        ("Estimated Freq", f"{cursor_data['estimated_frequency']} {cursor_data['estimated_frequency_unit']}", ""),
+    ]
+    return generate_latex_table(rows, caption="Manual Cursor Measurement", headers=("Value", ""))
+
+
+def generate_cycle_latex(cycle_data):
+    rows = [
+        ("Cycles", f"{cycle_data['cycle_count']}", ""),
+        ("Average Frequency", f"{cycle_data['avg_frequency']} {cycle_data['avg_frequency_unit']}", ""),
+        ("Average Period", f"{cycle_data['avg_period']} {cycle_data['avg_period_unit']}", ""),
+        ("Average Vpp", f"{cycle_data['avg_vpp']} V", ""),
+        ("Average RMS", f"{cycle_data['avg_rms']} V", ""),
+    ]
+    return generate_latex_table(rows, caption="Cycle Analysis", headers=("Value", ""))
+
+
+def generate_calibration_latex(calibration_settings):
+    rows = [
+        ("X Gain", calibration_settings.get("x_gain", 1), ""),
+        ("Y Gain", calibration_settings.get("y_gain", 1), ""),
+        ("X Offset", f"{calibration_settings.get('x_offset', 0)} V", ""),
+        ("Y Offset", f"{calibration_settings.get('y_offset', 0)} V", ""),
+        ("Invert X", calibration_settings.get("invert_x", False), ""),
+        ("Invert Y", calibration_settings.get("invert_y", False), ""),
+        ("Normalize", calibration_settings.get("normalize", False), ""),
+    ]
+    return generate_latex_table(rows, caption="Signal Calibration", headers=("Value", ""))
+
+
+def generate_comparison_latex(comparison_data):
+    rows = [
+        ("Snapshot", comparison_data.get("snapshot_name", "-"), ""),
+        ("Current file", comparison_data.get("current_file", "-"), ""),
+        ("Saved file", comparison_data.get("saved_file", "-"), ""),
+        ("Delta Vpp X", f"{comparison_data.get('delta_vpp_x', 0)} V", ""),
+        ("Delta Vpp Y", f"{comparison_data.get('delta_vpp_y', 0)} V", ""),
+        ("Delta Freq X", f"{comparison_data.get('delta_freq_x', 0)} {comparison_data.get('delta_freq_x_unit', 'Hz')}", ""),
+        ("Delta Freq Y", f"{comparison_data.get('delta_freq_y', 0)} {comparison_data.get('delta_freq_y_unit', 'Hz')}", ""),
+    ]
+    return generate_latex_table(rows, caption="Snapshot Comparison", headers=("Value", ""))
+

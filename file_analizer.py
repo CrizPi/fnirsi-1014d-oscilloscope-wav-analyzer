@@ -1,6 +1,10 @@
 import numpy as np
 
 
+class ScopeFileError(ValueError):
+    pass
+
+
 voltList = [
     [5.0,"V",1],[2.5,"V",1],[1.0,"V",1],
     [500,"mV",0.001],[200,"mV",0.001],[100,"mV",0.001],[50,"mV",0.001]
@@ -16,10 +20,35 @@ timeList = [
 [20,"nS",1E-9],[10,"nS",1E-9]
 ]
 
+
+def _read_exact(file_path, offset, size):
+    with open(file_path, "rb") as f:
+        f.seek(offset)
+        data = f.read(size)
+    if len(data) != size:
+        raise ScopeFileError(f"Archivo incompleto: se esperaban {size} bytes en offset {offset}.")
+    return data
+
+
+def _safe_lookup(sequence, index, description):
+    if index < 0 or index >= len(sequence):
+        raise ScopeFileError(f"Valor fuera de rango para {description}: {index}")
+    return sequence[index]
+
+
+def _scale_time_seconds(time_seconds):
+    if time_seconds >= 1:
+        return float(f"{time_seconds:.4g}"), "S", 1
+    if time_seconds >= 1e-3:
+        return float(f"{time_seconds * 1e3:.4g}"), "mS", 1e-3
+    if time_seconds >= 1e-6:
+        return float(f"{time_seconds * 1e6:.4g}"), "uS", 1e-6
+    return float(f"{time_seconds * 1e9:.4g}"), "nS", 1e-9
+
+
 def get_scope_config(file):
 
-    with open(file, "rb") as f:
-        header = f.read(208)
+    header = _read_exact(file, 0, 208)
 
     config = {}
 
@@ -34,7 +63,7 @@ def get_scope_config(file):
     # -----------------------------
     for ch in range(2):
 
-        v = voltList[header[4 + ch*10]]
+        v = _safe_lookup(voltList, header[4 + ch*10], f"volt/div canal {ch + 1}")
 
         volts_div = v[0]
         multiplier = v[2]
@@ -43,10 +72,10 @@ def get_scope_config(file):
         units.append(v[1])
         multipliers.append(multiplier)
 
-        probe_val = [1,10,100][header[10 + ch*10]]
+        probe_val = _safe_lookup([1, 10, 100], header[10 + ch*10], f"probe canal {ch + 1}")
         probe.append(probe_val)
 
-        coupling.append(["DC","AC"][header[8 + ch*10]])
+        coupling.append(_safe_lookup(["DC", "AC"], header[8 + ch*10], f"coupling canal {ch + 1}"))
 
     config["volts_div"] = volts
     config["volt_units"] = units
@@ -57,7 +86,7 @@ def get_scope_config(file):
     # -----------------------------
     # TIME DIV
     # -----------------------------
-    t = timeList[header[22]]
+    t = _safe_lookup(timeList, header[22], "time/div")
 
     config["time_div"] = t[0]
     config["time_units"] = t[1]
@@ -86,11 +115,8 @@ def get_scope_measures(file):
     config = get_scope_config(file)
     time_multiplier = config["time_multiplier"]
 
-    with open(file, "rb") as f:
-        f.seek(208)
-        m1 = f.read(48)
-        f.seek(256)
-        m2 = f.read(48)
+    m1 = _read_exact(file, 208, 48)
+    m2 = _read_exact(file, 256, 48)
 
     measures_raw = [m1, m2]
     results = {}
@@ -213,8 +239,10 @@ def get_scope_measures(file):
     time_minus_values = []
     cycle_units = [None, None]
     cycle_multiplier = [None, None]
-    time_units = [None, None]
-    time_multiplier_new = [None, None]
+    time_plus_units = [None, None]
+    time_minus_units = [None, None]
+    time_plus_multiplier = [None, None]
+    time_minus_multiplier = [None, None]
 
     for ch in range(2):
 
@@ -222,32 +250,24 @@ def get_scope_measures(file):
 
             cycle = 1.0 / freq_hz[ch]
 
-            if cycle >= 1:
-                cycle_val = cycle
-                cycle_units[ch] = "S"
-                cycle_multiplier[ch] = 1
-            elif cycle >= 1e-3:
-                cycle_val = cycle * 1e3
-                cycle_units[ch] = "mS"
-                cycle_multiplier[ch] = 1e-3
-            elif cycle >= 1e-6:
-                cycle_val = cycle * 1e6
-                cycle_units[ch] = "uS"
-                cycle_multiplier[ch] = 1e-6
-            else:
-                cycle_val = cycle * 1e9
-                cycle_units[ch] = "nS"
-                cycle_multiplier[ch] = 1e-9
-
-            cycle_val = float(f"{cycle_val:.4g}")
-
+            cycle_val, cycle_units[ch], cycle_multiplier[ch] = _scale_time_seconds(cycle)
             cycle_values.append(cycle_val)
 
-            time_plus_values.append(float(f"{cycle_val/2:.4g}"))
-            time_minus_values.append(float(f"{cycle_val/2:.4g}"))
+            duty_plus = max(0.0, float(results["Duty+"][ch]))
+            duty_minus = max(0.0, float(results["Duty-"][ch]))
+            duty_total = duty_plus + duty_minus
 
-            time_units[ch] = cycle_units[ch]
-            time_multiplier_new[ch] = cycle_multiplier[ch]
+            if duty_total > 0:
+                time_plus_seconds = cycle * (duty_plus / duty_total)
+                time_minus_seconds = cycle * (duty_minus / duty_total)
+            else:
+                time_plus_seconds = cycle / 2
+                time_minus_seconds = cycle / 2
+
+            time_plus_value, time_plus_units[ch], time_plus_multiplier[ch] = _scale_time_seconds(time_plus_seconds)
+            time_minus_value, time_minus_units[ch], time_minus_multiplier[ch] = _scale_time_seconds(time_minus_seconds)
+            time_plus_values.append(time_plus_value)
+            time_minus_values.append(time_minus_value)
 
         else:
 
@@ -257,8 +277,10 @@ def get_scope_measures(file):
 
             cycle_units[ch] = "Hz"
             cycle_multiplier[ch] = 1
-            time_units[ch] = "S"
-            time_multiplier_new[ch] = 1
+            time_plus_units[ch] = "S"
+            time_minus_units[ch] = "S"
+            time_plus_multiplier[ch] = 1
+            time_minus_multiplier[ch] = 1
 
     results["Cycle"] = cycle_values
     results["Time+"] = time_plus_values
@@ -268,24 +290,18 @@ def get_scope_measures(file):
     results["freq_multiplier"] = freq_multiplier
     results["cycle_units"] = cycle_units
     results["cycle_multiplier"] = cycle_multiplier
-    results["time_plus_units"] = time_units
-    results["time_minus_units"] = time_units
-    results["time_plus_multiplier"] = time_multiplier_new
-    results["time_minus_multiplier"] = time_multiplier_new
+    results["time_plus_units"] = time_plus_units
+    results["time_minus_units"] = time_minus_units
+    results["time_plus_multiplier"] = time_plus_multiplier
+    results["time_minus_multiplier"] = time_minus_multiplier
 
     return results
 
 
 def get_scope_raw_data_display(file, measures):
 
-    with open(file, "rb") as f:
-        # CH1 data2: 7000 - 8499
-        f.seek(7000)
-        ch1_raw = f.read(1500)
-
-        # CH2 data2: 8500 - 9999
-        f.seek(8500)
-        ch2_raw = f.read(1500)
+    ch1_raw = _read_exact(file, 7000, 1500)
+    ch2_raw = _read_exact(file, 8500, 1500)
 
     ch1 = []
     ch2 = []
@@ -313,13 +329,8 @@ def get_scope_raw_data_display(file, measures):
 
 def get_scope_raw_data_complete(file, measures):
 
-    with open(file, "rb") as f:
-
-        f.seek(1000)
-        ch1_raw = f.read(3000)
-
-        f.seek(4000)
-        ch2_raw = f.read(3000)
+    ch1_raw = _read_exact(file, 1000, 3000)
+    ch2_raw = _read_exact(file, 4000, 3000)
 
     ch1 = []
     ch2 = []
