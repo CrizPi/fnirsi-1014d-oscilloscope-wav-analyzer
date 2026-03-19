@@ -194,4 +194,6 @@ If you want to distribute the project to other Windows users, this `.exe` is the
 
 ## License
 
-No license file is currently included in the repository. Add one before publishing if you want to define reuse terms.
+This project is released under the MIT License.
+
+See the [`LICENSE`](C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer/LICENSE) file for details.
