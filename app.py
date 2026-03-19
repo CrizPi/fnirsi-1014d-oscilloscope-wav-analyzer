@@ -1,11 +1,15 @@
+import atexit
 import os
+import socket
+import time
 import uuid
 from datetime import datetime
-from threading import Lock
+from threading import Lock, Thread
 
 import numpy as np
 from flask import Flask, Response, after_this_request, render_template, request, send_file, session
 from werkzeug.utils import secure_filename
+import webview
 
 from file_analizer import ScopeFileError, get_scope_config, get_scope_measures, get_scope_raw_data_display
 from plot_maker import (
@@ -132,6 +136,30 @@ ANALYSIS_CACHE = {}
 GRAPH_CACHE = {}
 CACHE_LOCK = Lock()
 MAX_CACHE_ITEMS = 32
+MAIN_WINDOW = None
+
+
+class DesktopApi:
+    def save_download(self, filename, content_base64):
+        if MAIN_WINDOW is None:
+            return {"ok": False, "message": "Desktop window is not available."}
+
+        try:
+            file_path = MAIN_WINDOW.create_file_dialog(
+                webview.SAVE_DIALOG,
+                save_filename=filename or "download.bin",
+            )
+            if not file_path:
+                return {"ok": False, "message": "Download canceled."}
+
+            selected_path = file_path[0] if isinstance(file_path, (list, tuple)) else file_path
+            import base64
+            data = base64.b64decode(content_base64.encode("utf-8"))
+            with open(selected_path, "wb") as output_file:
+                output_file.write(data)
+            return {"ok": True, "message": f"Saved to {selected_path}"}
+        except Exception as exc:
+            return {"ok": False, "message": f"Download failed: {exc}"}
 
 
 def _freeze_value(value):
@@ -178,6 +206,23 @@ def cleanup_file():
             os.remove(file_path)
         except OSError:
             pass
+
+
+def cleanup_upload_folder():
+    if not os.path.isdir(UPLOAD_FOLDER):
+        return
+
+    for entry in os.scandir(UPLOAD_FOLDER):
+        if not entry.is_file():
+            continue
+        _invalidate_file_cache(entry.path)
+        try:
+            os.remove(entry.path)
+        except OSError:
+            pass
+
+
+atexit.register(cleanup_upload_folder)
 
 
 def clear_loaded_state():
@@ -811,7 +856,7 @@ def get_fft_download_data(ch1, ch2, math_result, fs):
     return fft_data
 
 
-def build_empty_view(error_message=None):
+def build_empty_view(error_message=None, toast_message=None, toast_variant="success"):
     empty_stats = calculate_signal_statistics(np.array([]))
     empty_advanced = calculate_advanced_measures(np.array([]), 0)
     return {
@@ -901,6 +946,8 @@ def build_empty_view(error_message=None):
         },
         "snapshots": session.get("snapshots", []),
         "error_message": error_message,
+        "toast_message": toast_message,
+        "toast_variant": toast_variant,
     }
 
 
@@ -1076,7 +1123,9 @@ def store_enabled_views(context):
 
 @app.route("/", methods=["GET", "POST"])
 def main():
-    error_message = session.pop("status_message", None)
+    error_message = None
+    toast_message = session.pop("toast_message", None)
+    toast_variant = session.pop("toast_variant", "success")
     pending_snapshot_name = None
     action_name = None
 
@@ -1122,10 +1171,15 @@ def main():
                     "comparison_snapshot_id": "",
                 }
             )
+            toast_message = f"File loaded: {secure_filename(uploaded_file.filename) or 'scope_capture.wav'}"
+            toast_variant = "success"
 
     if request.method == "POST" and "math_op" in request.form:
         action_name = "math"
         session["math_operation"] = request.form.get("math_op")
+        if session["math_operation"]:
+            toast_message = f"Math applied: {session['math_operation'].upper()}"
+            toast_variant = "success"
 
     if request.method == "POST" and "fft_apply" in request.form:
         action_name = "fft"
@@ -1141,23 +1195,33 @@ def main():
                 "window_type": request.form.get("fft_window_type", "hann"),
             }
             session["fft_enabled"] = True
+            toast_message = f"FFT applied on channel {session['fft_settings']['channel']}"
+            toast_variant = "success"
 
     if request.method == "POST" and "statistics_apply" in request.form:
         action_name = "statistics"
         session["statistics_enabled"] = True
+        toast_message = "Statistics applied."
+        toast_variant = "success"
 
     if request.method == "POST" and "advanced_apply" in request.form:
         action_name = "advanced"
         session["advanced_enabled"] = True
+        toast_message = "Advanced measures applied."
+        toast_variant = "success"
 
     if request.method == "POST" and "calculus_apply" in request.form:
         action_name = "calculus"
         session["calculus_enabled"] = True
         session["calculus_settings"] = {"channel": request.form.get("calculus_channel", "X")}
+        toast_message = f"Derivative and integral applied on channel {session['calculus_settings']['channel']}"
+        toast_variant = "success"
 
     if request.method == "POST" and "correlation_apply" in request.form:
         action_name = "correlation"
         session["correlation_enabled"] = True
+        toast_message = "Correlation applied."
+        toast_variant = "success"
 
     if request.method == "POST" and "calibration_apply" in request.form:
         action_name = "calibration"
@@ -1179,6 +1243,8 @@ def main():
                 "normalize": request.form.get("normalize") == "on",
             }
             session["calibration_enabled"] = True
+            toast_message = "Calibration applied."
+            toast_variant = "success"
 
     if request.method == "POST" and "cursor_apply" in request.form:
         action_name = "cursor"
@@ -1201,11 +1267,15 @@ def main():
                 "t2": raw_t2,
             }
             session["cursor_enabled"] = True
+            toast_message = f"Cursors applied on channel {session['cursor_settings']['channel']}"
+            toast_variant = "success"
 
     if request.method == "POST" and "cycle_apply" in request.form:
         action_name = "cycle"
         session["cycle_settings"] = {"channel": request.form.get("cycle_channel", "X")}
         session["cycle_enabled"] = True
+        toast_message = f"Cycle analysis applied on channel {session['cycle_settings']['channel']}"
+        toast_variant = "success"
 
     if request.method == "POST" and "save_snapshot" in request.form:
         action_name = "snapshot"
@@ -1215,21 +1285,27 @@ def main():
         action_name = "comparison"
         session["comparison_snapshot_id"] = request.form.get("snapshot_id", "")
         session["comparison_enabled"] = bool(session["comparison_snapshot_id"])
+        if session["comparison_enabled"]:
+            toast_message = "Snapshot comparison applied."
+            toast_variant = "success"
 
     if request.method == "POST" and "reset" in request.form:
         clear_loaded_state()
+        cleanup_upload_folder()
         session.clear()
-        return render_template("main.html", **build_empty_view())
+        return render_template("main.html", **build_empty_view(toast_message="Workspace reset and uploads cleaned.", toast_variant="success"))
 
     file_path = session.get("file_wav")
     if not file_path or not os.path.exists(file_path):
-        return render_template("main.html", **build_empty_view(error_message=error_message))
+        return render_template("main.html", **build_empty_view(error_message=error_message, toast_message=toast_message, toast_variant=toast_variant))
 
     try:
         context = prepare_analysis_context(action_name)
         if pending_snapshot_name:
             save_snapshot(pending_snapshot_name, context["file_name"], context["measures"], context["fft_data"])
             context["comparison_data"] = build_comparison_view(context["file_name"], context["measures"])
+            toast_message = f"Snapshot saved: {pending_snapshot_name}"
+            toast_variant = "success"
         store_enabled_views(context)
     except (OSError, ScopeFileError, ValueError, ZeroDivisionError) as exc:
         clear_loaded_state()
@@ -1257,6 +1333,8 @@ def main():
         comparison_data=context["comparison_data"],
         snapshots=session.get("snapshots", []),
         error_message=error_message,
+        toast_message=toast_message,
+        toast_variant=toast_variant,
     )
 
 
@@ -1475,5 +1553,41 @@ def download_correlation_graph():
 
 
 if __name__ == "__main__":
-    debug_mode = os.getenv("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
-    app.run(debug=debug_mode)
+    host = "127.0.0.1"
+    port = 5000
+    desktop_api = DesktopApi()
+
+    def run_flask():
+        app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
+
+    def wait_for_server(timeout_seconds=10):
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            try:
+                with socket.create_connection((host, port), timeout=0.5):
+                    return True
+            except OSError:
+                time.sleep(0.1)
+        return False
+
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    if not wait_for_server():
+        raise RuntimeError(f"Flask server did not start on http://{host}:{port}")
+
+    window = webview.create_window(
+        "Oscilloscope Analyzer",
+        f"http://{host}:{port}",
+        width=1200,
+        height=800,
+        js_api=desktop_api,
+    )
+    MAIN_WINDOW = window
+
+    def on_window_closed():
+        cleanup_upload_folder()
+
+    window.events.closed += on_window_closed
+    webview.start()
+    

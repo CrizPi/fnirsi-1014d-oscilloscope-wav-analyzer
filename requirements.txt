@@ -3,3 +3,4 @@ Werkzeug
 numpy
 scipy
 matplotlib
+pywebview

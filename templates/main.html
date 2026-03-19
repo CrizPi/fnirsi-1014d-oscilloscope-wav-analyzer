@@ -1,4 +1,4 @@
-<!-- 
+﻿<!-- 
 // @ts-nocheck
 // eslint-disable-next-line no-unused-vars
 -->
@@ -19,11 +19,13 @@
         </div>
     </header>
 
-    {% if error_message %}
-    <div class="alert">{{ error_message }}</div>
-    {% endif %}
+    <div id="alertHost">
+        {% if error_message %}
+        <div class="alert">{{ error_message }}</div>
+        {% endif %}
+    </div>
 
-    <section class="panel">
+    <section class="panel" id="uploadPanel">
         <form method="POST" id="upload-file-form" enctype="multipart/form-data">
             <input type="file" id="file" name="file" accept=".wav" required>
             <label for="file" class="upload-picker">
@@ -45,7 +47,7 @@
         </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="measuresPanel">
         <h2>Oscilloscope Configuration</h2>
         <table class="data-table">
             <thead>
@@ -60,7 +62,7 @@
         </table>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="modulePanel">
         <div class="section-header">
             <h2>Measurements</h2>
             <div class="inline-actions">
@@ -501,26 +503,167 @@
         </div>
     </section>
 
+    <div class="toast" id="toast" hidden></div>
+    <div id="pageState" data-toast-message="{{ toast_message or '' }}" data-toast-variant="{{ toast_variant or 'success' }}"></div>
+
     <script>
+    let toastTimer = null;
+
+    function showToast(message, variant = "success") {
+        const toast = document.getElementById("toast");
+        if (!toast || !message) return;
+        toast.textContent = message;
+        toast.dataset.variant = variant;
+        toast.hidden = false;
+        toast.classList.add("is-visible");
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => {
+            toast.classList.remove("is-visible");
+            window.setTimeout(() => { toast.hidden = true; }, 180);
+        }, 2200);
+    }
+
     async function copyEndpoint(event, url, okMessage) {
         event.preventDefault();
         try {
             const response = await fetch(url);
             const text = await response.text();
             await navigator.clipboard.writeText(text);
-            alert(okMessage);
+            showToast(okMessage, "success");
         } catch (error) {
             console.error(error);
-            alert("Error copying content.");
+            showToast("Error copying content.", "error");
         }
     }
 
-    const filterButtons = document.querySelectorAll(".filtro[data-target]");
-    const contentSections = document.querySelectorAll(".contenido");
+    async function blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const result = String(reader.result || "");
+                const markerIndex = result.indexOf("base64,");
+                if (markerIndex === -1) {
+                    reject(new Error("Unable to encode download."));
+                    return;
+                }
+                resolve(result.slice(markerIndex + 7));
+            };
+            reader.onerror = () => reject(new Error("Unable to read download blob."));
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    function initializeDynamicUI() {
+        cacheCursorRefs();
+        renderCursorGrid();
+        renderCursorWave();
+        updateCursorOverlay();
+    }
+
+    function replaceNodeIfPresent(doc, id) {
+        const current = document.getElementById(id);
+        const next = doc.getElementById(id);
+        if (current && next) {
+            current.replaceWith(next);
+        }
+    }
+
+    function replaceModuleSection(doc, sectionClass) {
+        if (!sectionClass) return;
+        const current = document.querySelector(`#modulePanel .contenido.${sectionClass}`);
+        const next = doc.querySelector(`#modulePanel .contenido.${sectionClass}`);
+        if (current && next) {
+            current.replaceWith(next);
+        }
+    }
+
+    function getSectionClassForAction(actionName) {
+        const sectionMap = {
+            math_op: "math",
+            fft_apply: "fft",
+            statistics_apply: "stat",
+            advanced_apply: "advanced",
+            calculus_apply: "calculus",
+            correlation_apply: "correlation",
+            calibration_apply: "calibration",
+            cursor_apply: "cursor",
+            cycle_apply: "cycle",
+            save_snapshot: "snapshots",
+            compare_apply: "snapshots",
+        };
+        return sectionMap[actionName] || "";
+    }
+
+    function applyResponseDom(doc, actionName, previousScrollY) {
+        replaceNodeIfPresent(doc, "alertHost");
+        replaceNodeIfPresent(doc, "pageState");
+        replaceModuleSection(doc, getSectionClassForAction(actionName));
+
+        if (actionName === "calibration_apply") {
+            replaceNodeIfPresent(doc, "measuresPanel");
+        }
+
+        if (actionName === "upload-file") {
+            replaceNodeIfPresent(doc, "uploadPanel");
+            replaceNodeIfPresent(doc, "measuresPanel");
+        }
+
+        initializeDynamicUI();
+        activateFilter(localStorage.getItem("selectedFilter") || "math");
+        const pageState = document.getElementById("pageState");
+        if (pageState?.dataset.toastMessage) {
+            showToast(pageState.dataset.toastMessage, pageState.dataset.toastVariant || "success");
+        }
+
+        window.requestAnimationFrame(() => {
+            window.scrollTo(0, previousScrollY);
+            window.requestAnimationFrame(() => {
+                window.scrollTo(0, previousScrollY);
+            });
+        });
+    }
+
+    function getModuleActionName(formData) {
+        const actionKeys = [
+            "math_op",
+            "fft_apply",
+            "statistics_apply",
+            "advanced_apply",
+            "calculus_apply",
+            "correlation_apply",
+            "calibration_apply",
+            "cursor_apply",
+            "cycle_apply",
+            "save_snapshot",
+            "compare_apply",
+        ];
+        return actionKeys.find((key) => formData.has(key)) || "";
+    }
+
+    async function submitModuleForm(form) {
+        const formData = new FormData(form);
+        const actionName = getModuleActionName(formData);
+        const previousScrollY = window.scrollY;
+        const response = await fetch(form.getAttribute("action") || window.location.pathname, {
+            method: "POST",
+            body: formData,
+            credentials: "same-origin",
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        const html = await response.text();
+        if (!response.ok) {
+            throw new Error(html || "Action failed.");
+        }
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        applyResponseDom(doc, actionName, previousScrollY);
+    }
+
     const fileInput = document.getElementById("file");
     const uploadPickerTitle = document.querySelector(".upload-picker-title");
 
     function activateFilter(target) {
+        const filterButtons = document.querySelectorAll(".filtro[data-target]");
+        const contentSections = document.querySelectorAll(".contenido");
         filterButtons.forEach((button) => button.classList.remove("activo"));
         contentSections.forEach((section) => { section.style.display = "none"; });
 
@@ -531,29 +674,24 @@
         localStorage.setItem("selectedFilter", target);
     }
 
-    filterButtons.forEach((button) => {
-        button.addEventListener("click", () => activateFilter(button.getAttribute("data-target")));
-    });
-
-    const cursorGraph = document.getElementById("cursorGraph");
-    const cursorForm = document.querySelector('.contenido.cursor form.fft-form');
-    const cursorT1Input = cursorForm?.querySelector('input[name="cursor_t1"]');
-    const cursorT2Input = cursorForm?.querySelector('input[name="cursor_t2"]');
-    const cursorSvg = cursorGraph?.querySelector(".cursor-svg");
-    const cursorGrid = document.getElementById("cursorGrid");
-    const cursorWavePath = document.getElementById("cursorWavePath");
-    const cursorLineT1 = document.getElementById("cursorLineT1");
-    const cursorLineT2 = document.getElementById("cursorLineT2");
-    const cursorHandleT1 = document.getElementById("cursorHandleT1");
-    const cursorHandleT2 = document.getElementById("cursorHandleT2");
-    const cursorLabelT1 = document.getElementById("cursorLabelT1");
-    const cursorLabelT2 = document.getElementById("cursorLabelT2");
-    const cursorPlotDataElement = document.getElementById("cursorPlotData");
-    const cursorPlotPoints = cursorPlotDataElement ? JSON.parse(cursorPlotDataElement.textContent || "[]") : [];
-    const cursorTimeMin = Number.parseFloat(cursorGraph?.dataset.timeMin ?? "0");
-    const cursorTimeMax = Number.parseFloat(cursorGraph?.dataset.timeMax ?? "1");
-    const cursorVoltageMin = Number.parseFloat(cursorGraph?.dataset.voltageMin ?? "-1");
-    const cursorVoltageMax = Number.parseFloat(cursorGraph?.dataset.voltageMax ?? "1");
+    let cursorGraph;
+    let cursorForm;
+    let cursorT1Input;
+    let cursorT2Input;
+    let cursorSvg;
+    let cursorGrid;
+    let cursorWavePath;
+    let cursorLineT1;
+    let cursorLineT2;
+    let cursorHandleT1;
+    let cursorHandleT2;
+    let cursorLabelT1;
+    let cursorLabelT2;
+    let cursorPlotPoints = [];
+    let cursorTimeMin = 0;
+    let cursorTimeMax = 1;
+    let cursorVoltageMin = -1;
+    let cursorVoltageMax = 1;
     const svgWidth = 1000;
     const svgHeight = 420;
     const plotLeft = 72;
@@ -561,6 +699,28 @@
     const plotTop = 24;
     const plotBottom = 376;
     let activeCursorKey = null;
+
+    function cacheCursorRefs() {
+        cursorGraph = document.getElementById("cursorGraph");
+        cursorForm = document.querySelector('.contenido.cursor form.fft-form');
+        cursorT1Input = cursorForm?.querySelector('input[name="cursor_t1"]');
+        cursorT2Input = cursorForm?.querySelector('input[name="cursor_t2"]');
+        cursorSvg = cursorGraph?.querySelector(".cursor-svg");
+        cursorGrid = document.getElementById("cursorGrid");
+        cursorWavePath = document.getElementById("cursorWavePath");
+        cursorLineT1 = document.getElementById("cursorLineT1");
+        cursorLineT2 = document.getElementById("cursorLineT2");
+        cursorHandleT1 = document.getElementById("cursorHandleT1");
+        cursorHandleT2 = document.getElementById("cursorHandleT2");
+        cursorLabelT1 = document.getElementById("cursorLabelT1");
+        cursorLabelT2 = document.getElementById("cursorLabelT2");
+        const cursorPlotDataElement = document.getElementById("cursorPlotData");
+        cursorPlotPoints = cursorPlotDataElement ? JSON.parse(cursorPlotDataElement.textContent || "[]") : [];
+        cursorTimeMin = Number.parseFloat(cursorGraph?.dataset.timeMin ?? "0");
+        cursorTimeMax = Number.parseFloat(cursorGraph?.dataset.timeMax ?? "1");
+        cursorVoltageMin = Number.parseFloat(cursorGraph?.dataset.voltageMin ?? "-1");
+        cursorVoltageMax = Number.parseFloat(cursorGraph?.dataset.voltageMax ?? "1");
+    }
 
     if (fileInput && uploadPickerTitle) {
         fileInput.addEventListener("change", () => {
@@ -718,26 +878,18 @@
         updateCursorOverlay();
     }
 
-    function finishCursorDrag() {
-        if (!activeCursorKey || !cursorForm) {
-            activeCursorKey = null;
-            return;
-        }
-        activeCursorKey = null;
-        cursorForm.requestSubmit();
-    }
+    document.addEventListener("click", (event) => {
+        const button = event.target.closest(".filtro[data-target]");
+        if (!button) return;
+        activateFilter(button.getAttribute("data-target"));
+    });
 
-    [
-        [cursorHandleT1, "t1"],
-        [cursorHandleT2, "t2"],
-        [cursorLineT1, "t1"],
-        [cursorLineT2, "t2"],
-    ].forEach(([target, key]) => {
-        target?.addEventListener("pointerdown", (event) => {
-            activeCursorKey = key;
-            handleCursorMove(event.clientX);
-            event.preventDefault();
-        });
+    document.addEventListener("pointerdown", (event) => {
+        const target = event.target.closest("#cursorHandleT1, #cursorHandleT2, #cursorLineT1, #cursorLineT2");
+        if (!target) return;
+        activeCursorKey = target.id.endsWith("T1") ? "t1" : "t2";
+        handleCursorMove(event.clientX);
+        event.preventDefault();
     });
 
     window.addEventListener("pointermove", (event) => {
@@ -747,12 +899,22 @@
         handleCursorMove(event.clientX);
     });
 
-    window.addEventListener("pointerup", (event) => {
+    window.addEventListener("pointerup", async (event) => {
         if (!activeCursorKey) {
             return;
         }
         handleCursorMove(event.clientX);
-        finishCursorDrag();
+        if (!activeCursorKey || !cursorForm) {
+            activeCursorKey = null;
+            return;
+        }
+        activeCursorKey = null;
+        try {
+            await submitModuleForm(cursorForm);
+        } catch (error) {
+            console.error(error);
+            showToast(error.message || "Action failed.", "error");
+        }
     });
 
     window.addEventListener("pointercancel", () => {
@@ -761,9 +923,11 @@
 
     window.addEventListener("DOMContentLoaded", () => {
         activateFilter(localStorage.getItem("selectedFilter") || "math");
-        renderCursorGrid();
-        renderCursorWave();
-        updateCursorOverlay();
+        initializeDynamicUI();
+        const pageState = document.getElementById("pageState");
+        if (pageState?.dataset.toastMessage) {
+            showToast(pageState.dataset.toastMessage, pageState.dataset.toastVariant || "success");
+        }
         const scrollY = localStorage.getItem("scrollY");
         if (scrollY !== null) {
             window.scrollTo(0, parseInt(scrollY, 10));
@@ -771,8 +935,62 @@
         }
     });
 
-    document.querySelectorAll("form").forEach((form) => {
-        form.addEventListener("submit", () => localStorage.setItem("scrollY", window.scrollY));
+    document.addEventListener("submit", async (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (form.classList.contains("download")) {
+            return;
+        }
+
+        if (form.method.toUpperCase() === "POST" && form.closest("#modulePanel")) {
+            event.preventDefault();
+            try {
+                await submitModuleForm(form);
+            } catch (error) {
+                console.error(error);
+                showToast(error.message || "Action failed.", "error");
+            }
+            return;
+        }
+
+        localStorage.setItem("scrollY", window.scrollY);
+    });
+
+    document.querySelectorAll("form.download").forEach((form) => {
+        form.addEventListener("submit", async (event) => {
+            if (!(window.pywebview && window.pywebview.api && window.pywebview.api.save_download)) {
+                return;
+            }
+
+            event.preventDefault();
+
+            try {
+                const response = await fetch(form.action, { credentials: "same-origin" });
+                if (!response.ok) {
+                    const message = await response.text();
+                    throw new Error(message || `Download failed (${response.status}).`);
+                }
+
+                const blob = await response.blob();
+                const base64 = await blobToBase64(blob);
+                const disposition = response.headers.get("Content-Disposition") || "";
+                const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+                const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+                const filename = utf8Match
+                    ? decodeURIComponent(utf8Match[1])
+                    : (plainMatch ? plainMatch[1] : "download.bin");
+
+                const result = await window.pywebview.api.save_download(filename, base64);
+                if (!result || !result.ok) {
+                    throw new Error(result?.message || "Download failed.");
+                }
+                showToast("Download completed.", "success");
+            } catch (error) {
+                console.error(error);
+                showToast(error.message || "Download failed.", "error");
+            }
+        });
     });
     </script>
 </body>

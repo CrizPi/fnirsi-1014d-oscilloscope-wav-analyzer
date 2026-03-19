@@ -21,6 +21,10 @@ body {
     line-height: 1.5;
 }
 
+html.ui-restoring body {
+    visibility: hidden;
+}
+
 .page-header,
 .panel {
     width: min(1200px, calc(100% - 32px));
@@ -436,4 +440,48 @@ button:disabled {
     .cursor-summary {
         grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     }
+
+    .module-content {
+        min-height: auto;
+        max-height: none;
+        overflow: visible;
+    }
+
+    .contenido {
+        height: auto;
+        overflow: visible;
+        padding-right: 0;
+    }
+}
+
+.toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 9999;
+    min-width: 220px;
+    max-width: 360px;
+    padding: 12px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(18, 18, 18, 0.94);
+    color: #f5f5f5;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    backdrop-filter: blur(12px);
+}
+
+.toast.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.toast[data-variant="success"] {
+    border-color: rgba(171, 239, 117, 0.38);
+}
+
+.toast[data-variant="error"] {
+    border-color: rgba(255, 123, 123, 0.38);
 }
