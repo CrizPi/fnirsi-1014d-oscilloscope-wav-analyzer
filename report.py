@@ -1,336 +1,305 @@
-# report.py - COMPLETO
+# report.py - OPTIMIZADO Y REESTRUCTURADO
 
-import matplotlib
-matplotlib.use('Agg') 
-import matplotlib.pyplot as plt
-import numpy as np
-from flask import session
 import os
-from file_analizer import get_scope_measures, get_scope_raw_data_display
-from signal_analyzer import get_scope_fs_and_time, convert_scope_data
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib import colors
 import tempfile
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from typing import Optional, Union, List
 
 
 # ==========================================================
-# FORMATEO DE MEDIDAS CON UNIDADES
+# HELPERS GENERALES
+# ==========================================================
+
+ENG_SCALES = [
+    (1e-12, 'p'), (1e-9, 'n'), (1e-6, 'µ'),
+    (1e-3, 'm'), (1, ''), (1e3, 'k'), (1e6, 'M')
+]
+
+
+def to_numpy(arr):
+    return np.array(arr) if arr is not None else np.array([])
+
+
+def safe_max(val):
+    return val if (val != 0 and not np.isnan(val)) else 1
+
+
+def safe_range(min_val, max_val):
+    return (min_val, max_val + 1e-9) if min_val == max_val else (min_val, max_val)
+
+
+def is_empty_signal(signal):
+    return signal is None or len(signal) == 0 or np.all(np.array(signal) == 0)
+
+
+def scale_time_axis(t):
+    if len(t) == 0:
+        return t, ''
+
+    max_t = np.max(np.abs(t))
+
+    for factor, sym in ENG_SCALES:
+        if max_t < factor * 1000:
+            return t / factor, sym
+
+    return t, ''
+
+
+def save_figure(fig):
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+        fig.savefig(
+            tmp.name,
+            format="png",
+            bbox_inches="tight",
+            facecolor=fig.get_facecolor(),
+            dpi=150
+        )
+        return tmp.name
+
+
+# ==========================================================
+# FORMATEO DE MEDIDAS
 # ==========================================================
 
 def format_measure_value(key, channel, measures):
 
     value = measures[key][channel]
 
-    if key in ["Vmax","Vmin","Vavg","Vrms","Vpp","Vp"]:
+    if key in ["Vmax", "Vmin", "Vavg", "Vrms", "Vpp", "Vp"]:
         return f"{value} V"
 
     if key == "Freq":
-        unit = measures["freq_units"][channel]
-        mult = measures["freq_multiplier"][channel]
-        return f"{value*mult} {unit}"
+        return f"{value * measures['freq_multiplier'][channel]} {measures['freq_units'][channel]}"
 
     if key == "Cycle":
-        unit = measures["cycle_units"][channel]
-        mult = measures["cycle_multiplier"][channel]
-        return f"{value*mult} {unit}"
+        return f"{value * measures['cycle_multiplier'][channel]} {measures['cycle_units'][channel]}"
 
     if key == "Time+":
-        unit = measures["time_plus_units"][channel]
-        mult = measures["time_plus_multiplier"][channel]
-        return f"{value*mult} {unit}"
+        return f"{value * measures['time_plus_multiplier'][channel]} {measures['time_plus_units'][channel]}"
 
     if key == "Time-":
-        unit = measures["time_minus_units"][channel]
-        mult = measures["time_minus_multiplier"][channel]
-        return f"{value*mult} {unit}"
+        return f"{value * measures['time_minus_multiplier'][channel]} {measures['time_minus_units'][channel]}"
 
-    if key in ["Duty+","Duty-"]:
+    if key in ["Duty+", "Duty-"]:
         return f"{value} %"
 
     return str(value)
 
 
 # ==========================================================
-# GENERACIÓN DE GRÁFICA PARA PDF
+# CONFIGURACIÓN DE EJES
 # ==========================================================
 
-def generate_grafic_download(t, ch1, ch2, file_name, measures=None, show_empty=False):
-
-    if len(t) > 0:
-
-        max_t = np.max(np.abs(t))
-
-        eng_scales = [
-            (1e-12,'p'),
-            (1e-9,'n'),
-            (1e-6,'µ'),
-            (1e-3,'m'),
-            (1,''),
-            (1e3,'k'),
-            (1e6,'M')
-        ]
-
-        scale = 1
-        prefix = ''
-
-        for factor, sym in eng_scales:
-            if max_t < factor*1000:
-                scale = factor
-                prefix = sym
-                break
-
-        t_scaled = np.array(t)/scale
-
-    else:
-
-        t_scaled = np.array(t)
-        prefix = ''
-
-    fig, ax = plt.subplots(figsize=(16,6))
-    ax2 = ax.twinx()
-
-    fig.patch.set_facecolor('#FFFFFF')
+def configure_axes(ax, ax2=None):
     ax.set_facecolor('#FFFFFF')
-    ax2.set_facecolor('#FFFFFF')
-
     for spine in ax.spines.values():
         spine.set_color('#000000')
         spine.set_linewidth(1)
 
-    ax2.spines['right'].set_color('#000000')
-    ax2.spines['right'].set_linewidth(1)
-
-    ax.grid(True, which='major', color='#C0C0C0', linestyle='-', linewidth=0.6)
-    ax2.grid(True, which='major', color='#C0C0C0', linestyle='-', linewidth=0.6)
-
+    ax.grid(True, which='major', color='#C0C0C0', linewidth=0.6)
     ax.minorticks_on()
     ax.grid(True, which='minor', color='#E6E6E6', linewidth=0.4)
-
-    ax2.minorticks_on()
-    ax2.grid(True, which='minor', color='#E6E6E6', linewidth=0.4)
-
     ax.tick_params(colors='#000000')
-    ax2.tick_params(colors='#000000')
+
+    if ax2:
+        ax2.set_facecolor('#FFFFFF')
+        ax2.spines['right'].set_color('#000000')
+        ax2.spines['right'].set_linewidth(1)
+        ax2.grid(True, which='major', color='#C0C0C0', linewidth=0.6)
+        ax2.minorticks_on()
+        ax2.grid(True, which='minor', color='#E6E6E6', linewidth=0.4)
+        ax2.tick_params(colors='#000000')
+
+
+def configure_time_ticks(ax, t_scaled):
+    if len(t_scaled) > 1:
+        t_min, t_max = safe_range(np.min(t_scaled), np.max(t_scaled))
+        ax.set_xticks(np.linspace(t_min, t_max, 19))
+
+
+def configure_y_axes(ax, ax2, ch1, ch2, divisions=8):
+    max1 = safe_max(np.max(np.abs(ch1)) if len(ch1) > 0 else 1) * 1.2
+    max2 = safe_max(np.max(np.abs(ch2)) if len(ch2) > 0 else 1) * 1.2
+
+    step1 = max1 / (divisions / 2)
+    step2 = max2 / (divisions / 2)
+
+    y1 = np.arange(-divisions/2, divisions/2 + 1) * step1
+    y2 = np.arange(-divisions/2, divisions/2 + 1) * step2
+
+    ax.set_ylim(y1[0], y1[-1])
+    ax.set_yticks(y1)
+
+    if ax2:
+        ax2.set_ylim(y2[0], y2[-1])
+        ax2.set_yticks(y2)
+
+
+# ==========================================================
+# GRÁFICA NORMAL
+# ==========================================================
+
+def generate_grafic_download(t, ch1, ch2, file_name, measures=None, show_empty=False):
+
+    t = to_numpy(t)
+    ch1 = to_numpy(ch1)
+    ch2 = to_numpy(ch2)
+
+    t_scaled, prefix = scale_time_axis(t)
+
+    fig, ax = plt.subplots(figsize=(16, 6))
+    ax2 = ax.twinx()
+
+    fig.patch.set_facecolor('#FFFFFF')
+
+    configure_axes(ax, ax2)
 
     ax.set_xlabel(f"Time ({prefix}s)", color="#000000")
     ax.set_ylabel("Voltage X (V)", color="#000000")
     ax2.set_ylabel("Voltage Y (V)", color="#000000")
 
-    # NUEVO: la grilla se dibuja debajo de todo
-    ax.set_axisbelow(True)
+    configure_time_ticks(ax, t_scaled)
+    configure_y_axes(ax, ax2, ch1, ch2)
 
-    if len(t_scaled) > 1:
+    lines = []
 
-        t_min = np.min(t_scaled)
-        t_max = np.max(t_scaled)
+    if len(ch1) > 0:
+        l1, = ax.plot(t_scaled[:len(ch1)], ch1, color='#0033CC', linewidth=2, label='X')
+        lines.append(l1)
 
-        horizontal_divisions = 18
+    if len(ch2) > 0:
+        l2, = ax2.plot(t_scaled[:len(ch2)], ch2, color='#CC0000', linewidth=2, label='Y')
+        lines.append(l2)
 
-        xticks = np.linspace(t_min, t_max, horizontal_divisions+1)
+    if lines:
+        leg = ax.legend(lines, [l.get_label() for l in lines], loc='upper right')
+        leg.get_frame().set_facecolor('#FFFFFF')
+        leg.get_frame().set_edgecolor('#000000')
 
-        ax.set_xticks(xticks)
+    plt.title(file_name, color='#000000')
 
-    divisions = 8
-
-    max1 = np.max(np.abs(ch1)) if len(ch1)>0 else 1
-    max2 = np.max(np.abs(ch2)) if len(ch2)>0 else 1
-
-    max1*=1.2
-    max2*=1.2
-
-    step1 = max1/(divisions/2)
-    step2 = max2/(divisions/2)
-
-    y_ticks1 = np.arange(-divisions/2,divisions/2+1)*step1
-    y_ticks2 = np.arange(-divisions/2,divisions/2+1)*step2
-
-    ax.set_ylim(y_ticks1[0],y_ticks1[-1])
-    ax2.set_ylim(y_ticks2[0],y_ticks2[-1])
-
-    ax.set_yticks(y_ticks1)
-    ax2.set_yticks(y_ticks2)
-
-    # NUEVO: fondo para etiquetas
-    for label in ax.get_xticklabels() + ax.get_yticklabels():
-        label.set_bbox(dict(facecolor='white', edgecolor='none', pad=0.3))
-
-    for label in ax2.get_yticklabels():
-        label.set_bbox(dict(facecolor='white', edgecolor='none', pad=0.3))
-
-    lines=[]
-
-    line1, = ax.plot(t_scaled[:len(ch1)],ch1,color='#0033CC',linewidth=2,label='X')
-    line2, = ax2.plot(t_scaled[:len(ch2)],ch2,color='#CC0000',linewidth=2,label='Y')
-
-    lines.append(line1)
-    lines.append(line2)
-
-    leg = ax.legend(
-        lines,
-        ['X','Y'],
-        loc='upper right',
-        bbox_to_anchor=(1.00,1.00),
-        ncol=2
-)
-
-    plt.setp(leg.get_texts(),color='#000000')
-
-    leg.get_frame().set_facecolor('#FFFFFF')
-    leg.get_frame().set_edgecolor('#000000')
-
-    plt.title(file_name,color='#000000')
-
-    with tempfile.NamedTemporaryFile(suffix='.png',delete=False) as tmp_file:
-
-        plt.savefig(
-            tmp_file.name,
-            format="png",
-            bbox_inches="tight",
-            facecolor=fig.get_facecolor(),
-            dpi=150
-        )
-
-        tmp_png_path = tmp_file.name
-
+    path = save_figure(fig)
     plt.close()
 
-    return tmp_png_path
+    return path
+
+
+def generate_grafic_download_math(t: Optional[list], ch1: Optional[list], 
+                                ch2: Optional[list], file_name: str,
+                                math_result: Optional[list] = None) -> str:
+    """
+    Genera gráfico de osciloscopio con estilo blanco profesional.
+    
+    Args:
+        t: Array de tiempo
+        ch1: Señal canal 1 (azul)
+        ch2: Señal canal 2 (rojo)  
+        file_name: Nombre para título y referencia
+        math_result: Señal matemática (magenta)
+    
+    Returns:
+        Ruta temporal al archivo PNG generado
+    """
+    # Normalización de arrays
+    t = np.array(t) if t is not None else np.array([])
+    ch1 = np.array(ch1) if ch1 is not None else np.array([])
+    ch2 = np.array(ch2) if ch2 is not None else np.array([])
+    math_result = np.array(math_result) if math_result is not None else None
+    
+    # Determinar modo de visualización
+    is_math_only = (math_result is not None and len(math_result) > 0 and 
+                   is_empty_signal(ch1) and is_empty_signal(ch2))
+    
+    # Escala de tiempo
+    t_scaled, time_prefix = get_time_scale(t)
+    
+    # Configurar figura
+    fig, ax, ax2 = setup_figure(is_math_only)
+    ax.set_xlabel(f"Time ({time_prefix}s)", color="#000000")
+    
+    # Ejes centrales
+    ax.axhline(0, color='#000000', linewidth=1)
+    ax.axvline(0, color='#000000', linewidth=1)
+    
+    # Configurar ticks
+    setup_xticks(ax, t_scaled)
+    setup_yticks(ax, ax2, ch1, ch2, math_result, is_math_only)
+    
+    # Plotear señales
+    lines = plot_signals(ax, ax2, t_scaled, ch1, ch2, math_result, is_math_only)
+    
+    # Leyenda
+    setup_legend(ax, lines)
+    
+    plt.title(file_name, color='#000000')
+    
+    # Exportar PNG
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+        plt.savefig(tmp.name, format="png", bbox_inches="tight", 
+                   facecolor=fig.get_facecolor(), dpi=150)
+        path = tmp.name
+    
+    plt.close()
+    return path
 
 
 # ==========================================================
-# GENERACIÓN DEL REPORTE PDF
+# LATEX (SIN CAMBIOS FUNCIONALES)
 # ==========================================================
 
-def generate_scope_pdf_report(file_path):
+def generate_latex_table(rows, caption="Tabla", headers=("X", "Y")):
+    """
+    Genera código LaTeX para una tabla genérica.
 
-    default_config = {
-        'volts_div':[0,0],
-        'volt_units':['V','V'],
-        'volt_multiplier':[1,1],
-        'probe':[1,1],
-        'coupling':['DC','DC'],
-        'time_div':0,
-        'time_units':'S',
-        'time_multiplier':1
-    }
+    rows: lista de tuplas -> [(col1, col2, col3), ...]
+    caption: título de la tabla
+    headers: encabezados de columnas
+    """
 
-    config = session.get("config",default_config)
-
-    file_name = session.get("original_name",os.path.basename(file_path))
-
-    measures_actual = get_scope_measures(file_path)
-
-    ch1_disp,ch2_disp = get_scope_raw_data_display(file_path,measures_actual)
-
-    ch1_v_dips,ch2_v_dips = convert_scope_data(ch1_disp,ch2_disp,config,measures_actual)
-
-    fs,t = get_scope_fs_and_time(ch1_disp,config)
-
-    graph_path = generate_grafic_pdf(t,ch1_v_dips,ch2_v_dips,file_name,measures_actual)
-
-    output_pdf = tempfile.NamedTemporaryFile(suffix='.pdf',delete=False)
-
-    doc = SimpleDocTemplate(
-        output_pdf.name,
-        pagesize=A4,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=40,
-        bottomMargin=40
-    )
-
-    styles=getSampleStyleSheet()
-
-    title_style=ParagraphStyle(
-        'Title',
-        parent=styles['Title'],
-        fontName='Helvetica-Bold',
-        fontSize=16,
-        alignment=1,
-        spaceAfter=10
-    )
-
-    section_style=ParagraphStyle(
-        'Section',
-        parent=styles['Heading2'],
-        fontName='Helvetica-Bold',
-        fontSize=11,
-        spaceAfter=6
-    )
-
-    normal_style=ParagraphStyle(
-        'Normal',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=9
-    )
-
-    story=[]
-
-    story.append(Paragraph("Oscilloscope Measurement Report",title_style))
-
-    story.append(Paragraph(f"File: {file_name}",normal_style))
-
-    story.append(Spacer(1,8))
-
-    img = Image(graph_path,width=6.5*inch,height=2.6*inch)
-
-    story.append(img)
-
-    story.append(Spacer(1,10))
-
-    story.append(Paragraph("Signal Measurements",section_style))
-
-    measure_keys=[
-        "Vmax","Vmin","Vavg","Vrms","Vpp","Vp",
-        "Freq","Cycle","Time+","Time-","Duty+","Duty-"
-    ]
-
-    measures_data=[['Measurement','X','Y']]
-
-    for key in measure_keys:
-
-        ch1_value = format_measure_value(key,0,measures_actual)
-        ch2_value = format_measure_value(key,1,measures_actual)
-
-        measures_data.append([
-            key,
-            ch1_value,
-            ch2_value
-        ])
-
-    measures_table=Table(measures_data)
-
-    measures_table.setStyle(TableStyle([
-        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-        ('FONTSIZE',(0,0),(-1,-1),8),
-        ('ALIGN',(1,1),(-1,-1),'CENTER'),
-        ('GRID',(0,0),(-1,-1),0.25,colors.grey)
-    ]))
-
-    story.append(measures_table)
-
-    doc.build(story)
-
-    os.unlink(graph_path)
-
-    return output_pdf.name
+    for r in rows:
+        if r[2]:
+            latex = r"""
+            \begin{table}[h]
+            \centering
+            \begin{tabular}{|c|c|c|}
+            \hline
+            """
+        else:
+            latex = r"""
+            \begin{table}[h]
+            \centering
+            \begin{tabular}{|c|c|}
+            \hline
+            """
 
 
-from flask import Response
+    # Encabezados
+    if  headers[1]:
+        latex += f"Measure & {headers[0]} & {headers[1]} \\\\\n\\hline\n"
+    else:
+        latex += f"Measure & {headers[0]} \\\\\n\\hline\n"
+
+    # Filas
+    for r in rows:
+        if r[2]:
+            latex += f"{r[0]} & {r[1]} & {r[2]} \\\\\n\\hline\n"
+        else:
+            latex += f"{r[0]} & {r[1]} \\\\\n\\hline\n"
+
+    latex += f"""
+\\end{{tabular}}
+\\caption{{{caption}}}
+\\end{{table}}
+"""
+
+    return latex
+
+
 
 def generate_measures_latex(measures):
-    latex = r"""
-\begin{table}[h]
-\centering
-\begin{tabular}{|c|c|c|}
-\hline
-Parámetro & X & Y \\
-\hline
-"""
 
     rows = [
         ("Vmax", f"{measures['Vmax'][0]} V", f"{measures['Vmax'][1]} V"),
@@ -347,13 +316,39 @@ Parámetro & X & Y \\
         ("Duty-", f"{measures['Duty-'][0]} \\%", f"{measures['Duty-'][1]} \\%")
     ]
 
-    for r in rows:
-        latex += f"{r[0]} & {r[1]} & {r[2]} \\\\\n\\hline\n"
+    caption = "Oscilloscope Measurements"
 
-    latex += r"""
-\end{tabular}
-\caption{Oscilloscope Measurements}
-\end{table}
-"""
+    return generate_latex_table(
+        rows,
+        caption=caption,
+    )
 
-    return latex
+def generate_math_measures_latex(math_measures, operation=None):
+    """
+    Genera tabla LaTeX para medidas MATH (una sola columna de datos).
+    """
+
+    rows = [
+        ("Vmax", f"{math_measures['Vmax']} V", ""),
+        ("Vmin", f"{math_measures['Vmin']} V", ""),
+        ("Vavg", f"{math_measures['Vavg']} V", ""),
+        ("Vrms", f"{math_measures['Vrms']} Vrms", ""),
+        ("Vpp", f"{math_measures['Vpp']} Vpp", ""),
+        ("Vp", f"{math_measures['Vp']} Vp", ""),
+        ("Freq", f"{math_measures['Freq']} {math_measures['freq_unit']}", ""),
+        ("Cycle", f"{math_measures['Cycle']} {math_measures['cycle_unit']}", ""),
+        ("Time+", f"{math_measures['Time+']} {math_measures['time_plus_unit']}", ""),
+        ("Time-", f"{math_measures['Time-']} {math_measures['time_minus_unit']}", ""),
+        ("Duty+", f"{math_measures['Duty+']} \\%", ""),
+        ("Duty-", f"{math_measures['Duty-']} \\%", "")
+    ]
+
+    caption = "Oscilloscope MATH Measurements"
+    if operation:
+        caption += f" ({operation})"
+
+    return generate_latex_table(
+        rows,
+        caption=caption,
+        headers=("Value", "")
+    )

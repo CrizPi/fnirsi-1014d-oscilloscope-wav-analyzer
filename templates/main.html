@@ -162,21 +162,19 @@
     </tbody>
 </table>
 
-<form class="download" action="{{ url_for('download_latex') }}" method="get" style="margin: 20px 0;">
-    <a>table.tex: </a>
-    <button class="svg" type="submit" {% if not file %}disabled{% endif %}>
+
+    <a>Copy LaTeX: </a>
+    <button id="copyBtn" class="svg" onclick="copyLatex(event)" {% if not file %}disabled{% endif %} style="margin-bottom: 20px;">
          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
-  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+  <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z" />
 </svg>
     </button>
-</form>
 
 {% if grafica %}
 <div style="width: 100%;">
     <img src="data:image/png;base64,{{ grafica }}" style="width:100%;">
 </div>
 {% endif %}
-
 <form  class="download" action="{{ url_for('download_graph') }}" method="get" style="margin: 20px 0;">
     <a>graphic.png: </a>
     <button class="svg" type="submit" {% if not file %}disabled{% endif %}>
@@ -186,10 +184,225 @@
 
     </button>
 </form>
-
-
 </div>
 
+
+<script>
+async function copyLatex(event) {
+    event.preventDefault(); // 🚫 evita recarga
+
+    try {
+        const response = await fetch("{{ url_for('download_latex') }}");
+        const text = await response.text();
+
+        await navigator.clipboard.writeText(text);
+
+        alert("LaTeX copiado al portapapeles ✅");
+    } catch (error) {
+        console.error(error);
+        alert("Error al copiar el LaTeX ❌");
+    }
+}
+</script>
+
+<div>
+    <button {% if not file %}disabled{% endif %} class="filtro" data-target="math">Math</button>
+    <button {% if not file %}disabled{% endif %} class="filtro" data-target="fft">FFT</button>
+    <button {% if not file %}disabled{% endif %} class="filtro" data-target="stat">Statistics</button>
+    <button {% if not file %}disabled{% endif %} class="filtro" data-target="ad_mea">Advanced measures</button>
+    <button {% if not file %}disabled{% endif %} class="filtro" data-target="corre">Correlation</button>
+    <button {% if not file %}disabled{% endif %} class="filtro" data-target="dev_int">Derivative & Integral</button>
+</div>
+
+<div class="contenido math">
+
+    <form method="POST" style="margin: 20px 0;">
+        <button {% if not file %}disabled{% endif %}  class="filtro_btn" name="math_op" value="add">X + Y</button>
+        <button {% if not file %}disabled{% endif %}  class="filtro_btn" name="math_op" value="sub">X - Y</button>
+        <button {% if not file %}disabled{% endif %}  class="filtro_btn" name="math_op" value="mul">X ⋅ Y</button>
+        <button {% if not file %}disabled{% endif %}  class="filtro_btn" name="math_op" value="div">X ÷ Y</button>
+    </form>
+
+    {% if math_operation %}
+        <p style="color: #919191;">Operación activa: {{ math_operation }}</p>
+    {% endif %}
+
+    <div style="width: 100%;">
+        <img src="data:image/png;base64,{{ grafica_math }}" style="width:100%;">
+    </div>
+
+    <!-- 🔥 AQUÍ VA EL BOTÓN -->
+    <form class="download" action="{{ url_for('download_math_graph') }}" method="get" style="margin: 20px 0;">
+        <a>math_graph.png: </a>
+        <button class="svg" type="submit" {% if not file or not math_operation %}disabled{% endif %}>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+        </button>
+    </form>
+{% if math_measures %}
+<h1>Math Measures</h1>
+
+<table class="measures_table">
+    <thead>
+        <tr>
+            <th>Parámetro</th>
+            <th>MATH</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Vmax</td>
+            <td>{{ math_measures.Vmax }} V</td>
+        </tr>
+        <tr>
+            <td>Vmin</td>
+            <td>{{ math_measures.Vmin }} V</td>
+        </tr>
+        <tr>
+            <td>Vavg</td>
+            <td>{{ math_measures.Vavg }} V</td>
+        </tr>
+        <tr>
+            <td>Vrms</td>
+            <td>{{ math_measures.Vrms }} Vrms</td>
+        </tr>
+        <tr>
+            <td>Vpp</td>
+            <td>{{ math_measures.Vpp }} Vpp</td>
+        </tr>
+        <tr>
+            <td>Vp</td>
+            <td>{{ math_measures.Vp }} Vp</td>
+        </tr>
+        <tr>
+            <td>Freq</td>
+            <td>{{ math_measures.Freq }} {{ math_measures.freq_unit }}</td>
+        </tr>
+        <tr>
+            <td>Cycle</td>
+            <td>{{ math_measures.Cycle }} {{ math_measures.cycle_unit }}</td>
+        </tr>
+        <tr>
+            <td>Time+</td>
+            <td>{{ math_measures['Time+'] }} {{ math_measures.time_plus_unit }}</td>
+        </tr>
+        <tr>
+            <td>Time-</td>
+            <td>{{ math_measures['Time-'] }} {{ math_measures.time_minus_unit }}</td>
+        </tr>
+        <tr>
+            <td>Duty+</td>
+            <td>{{ math_measures['Duty+'] }} %</td>
+        </tr>
+        <tr>
+            <td>Duty-</td>
+            <td>{{ math_measures['Duty-'] }} %</td>
+        </tr>
+    </tbody>
+</table>
+{% endif %}
+<a>Copy Math LaTeX: </a>
+<button id="copyMathBtn" class="svg" onclick="copyMathLatex(event)" {% if not file or not math_operation %}disabled{% endif %} >
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z" />
+</svg>
+</button>
+</div>
+
+<div class="contenido fft">2</div>
+<div class="contenido stat">3</div>
+<div class="contenido ad_mea">4</div>
+<div class="contenido corre">5</div>
+<div class="contenido dev_int">6</div>
+
+<script>
+const botones = document.querySelectorAll(".filtro");
+const secciones = document.querySelectorAll(".contenido");
+
+// 🔹 Función para activar filtro
+function activarFiltro(target) {
+
+    // Quitar activo
+    botones.forEach(b => b.classList.remove("activo"));
+
+    // Ocultar todo
+    secciones.forEach(sec => sec.style.display = "none");
+
+    // Activar botón correcto
+    const botonActivo = document.querySelector(`.filtro[data-target="${target}"]`);
+    if (botonActivo) {
+        botonActivo.classList.add("activo");
+    }
+
+    // Mostrar sección
+    const seccion = document.querySelector("." + target);
+    if (seccion) {
+        seccion.style.display = "block";
+    }
+
+    // 💾 Guardar en localStorage
+    localStorage.setItem("filtroSeleccionado", target);
+}
+
+// 🔹 Evento click
+botones.forEach(boton => {
+    boton.addEventListener("click", () => {
+        const target = boton.getAttribute("data-target");
+        activarFiltro(target);
+    });
+});
+
+// 🔥 Al cargar la página
+window.addEventListener("DOMContentLoaded", () => {
+    const filtroGuardado = localStorage.getItem("filtroSeleccionado");
+
+    if (filtroGuardado) {
+        activarFiltro(filtroGuardado);
+    } else {
+        activarFiltro("math"); // por defecto
+    }
+});
+</script>
+
+<script>
+// Guardar posición antes de enviar formularios
+document.querySelectorAll("form").forEach(form => {
+    form.addEventListener("submit", () => {
+        localStorage.setItem("scrollY", window.scrollY);
+    });
+});
+</script>
+
+<script>
+// Restaurar scroll al cargar
+window.addEventListener("DOMContentLoaded", () => {
+    const scrollY = localStorage.getItem("scrollY");
+
+    if (scrollY !== null) {
+        window.scrollTo(0, parseInt(scrollY));
+        localStorage.removeItem("scrollY");
+    }
+});
+</script>
+
+<script>
+async function copyMathLatex(event) {
+    event.preventDefault();
+
+    try {
+        const response = await fetch("{{ url_for('download_math_latex') }}");
+        const text = await response.text();
+
+        await navigator.clipboard.writeText(text);
+
+        alert("Math LaTeX copiado ✅");
+    } catch (error) {
+        console.error(error);
+        alert("Error al copiar Math LaTeX ❌");
+    }
+}
+</script>
 
 </body>
 </html>

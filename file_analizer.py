@@ -28,7 +28,6 @@ def get_scope_config(file):
     multipliers = []
     probe = []
     coupling = []
-    offset_raw = []
 
     # -----------------------------
     # CONFIGURACIÓN POR CANAL

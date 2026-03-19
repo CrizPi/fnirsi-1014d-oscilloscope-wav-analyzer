@@ -191,3 +191,34 @@ body{
 .measures_table td:not(:first-child) {
     text-align: center;
 }
+.filtro, .filtro_btn {
+    width: 200px;
+    padding: 20px;
+    background-color: transparent;
+    border: solid, 1px;
+    border-color: white;
+    color: white;
+    cursor: pointer;
+    margin: 30px;
+}
+
+.filtro:hover, .filtro_btn:hover {
+    border-color: #F2E30F;
+    color: #F2E30F;
+}
+
+/* 🔥 botón activo */
+.filtro.activo {
+    background-color: transparent;
+    border: solid, 4px;
+    border-color: #F2E30F;
+    color: #F2E30F;
+}
+.contenido {
+    display: none;
+}
+
+
+button:disabled{
+    opacity: 0.5;
+}
