@@ -40,22 +40,26 @@ def _smooth_signal(signal, fs, mode="general"):
 
     signal_type = detect_signal_type(signal)
     if signal_type == "digital":
-        return medfilt(signal, kernel_size=3)
+        filtered = medfilt(signal, kernel_size=5)
+        filtered = anti_aliasing_filter(filtered, strength=5)
+        filtered = _savgol_smooth(filtered, window_fraction=0.03, polyorder=2)
+        return np.clip(filtered, float(np.min(signal)), float(np.max(signal)))
 
     if mode == "derivative":
-        cutoff_ratio = 0.045
-        window_fraction = 0.045
+        cutoff_ratio = 0.035
+        window_fraction = 0.055
     elif mode == "frequency":
-        cutoff_ratio = 0.10
-        window_fraction = 0.02
+        cutoff_ratio = 0.075
+        window_fraction = 0.035
     elif mode == "correlation":
-        cutoff_ratio = 0.08
-        window_fraction = 0.025
+        cutoff_ratio = 0.065
+        window_fraction = 0.04
     else:
-        cutoff_ratio = 0.09
-        window_fraction = 0.02
+        cutoff_ratio = 0.055
+        window_fraction = 0.045
 
-    filtered = butter_lowpass(signal, fs, cutoff_ratio=cutoff_ratio, order=3)
+    filtered = butter_lowpass(signal, fs, cutoff_ratio=cutoff_ratio, order=4)
+    filtered = anti_aliasing_filter(filtered, strength=7 if mode == "general" else 5)
     window_length = max(5, int(signal.size * window_fraction))
     if window_length % 2 == 0:
         window_length += 1
@@ -136,6 +140,10 @@ def calculate_frequency(signal, fs):
     if freq_hz <= 0:
         return 0, "Hz", 1
     return scale_frequency_value(freq_hz)
+
+
+def estimate_frequency_hz(signal, fs):
+    return float(_estimate_frequency_hz(signal, fs))
 
 
 def scale_frequency_value(freq_hz):
@@ -789,6 +797,146 @@ def calculate_current_analysis(signal, fs, method, component_value):
     }
 
 
+def calculate_voltage_current_phase_angle(voltage, current, fs):
+    voltage = _replace_nonfinite(voltage)
+    current = _replace_nonfinite(current)
+    voltage = np.asarray(voltage, dtype=float)
+    current = np.asarray(current, dtype=float)
+
+    length = min(voltage.size, current.size)
+    if length < 8 or fs <= 0:
+        return {"phase_angle_deg": 0.0, "enabled": False}
+
+    voltage = _smooth_signal(voltage[:length], fs, mode="frequency")
+    current = _smooth_signal(current[:length], fs, mode="frequency")
+    voltage = voltage - float(np.mean(voltage))
+    current = current - float(np.mean(current))
+
+    dominant_frequency_hz = _estimate_frequency_hz(voltage, fs)
+    if dominant_frequency_hz <= 0:
+        return {"phase_angle_deg": 0.0, "enabled": False}
+
+    sample_count = voltage.size
+    window = np.hanning(sample_count)
+    fft_size = 1
+    target_size = max(sample_count * 8, 4096)
+    while fft_size < target_size:
+        fft_size <<= 1
+
+    voltage_spectrum = np.fft.rfft(voltage * window, n=fft_size)
+    current_spectrum = np.fft.rfft(current * window, n=fft_size)
+    frequencies_hz = np.fft.rfftfreq(fft_size, d=1 / fs)
+    if frequencies_hz.size == 0:
+        return {"phase_angle_deg": 0.0, "enabled": False}
+
+    target_index = int(np.argmin(np.abs(frequencies_hz - dominant_frequency_hz)))
+    if target_index <= 0 or target_index >= frequencies_hz.size:
+        return {"phase_angle_deg": 0.0, "enabled": False}
+
+    phase_voltage = float(np.angle(voltage_spectrum[target_index]))
+    phase_current = float(np.angle(current_spectrum[target_index]))
+    phase_angle_deg = np.degrees(phase_current - phase_voltage)
+    phase_angle_deg = (phase_angle_deg + 180.0) % 360.0 - 180.0
+
+    return {
+        "phase_angle_deg": round(float(phase_angle_deg), 4),
+        "dominant_frequency_hz": round(float(dominant_frequency_hz), 6),
+        "enabled": True,
+    }
+
+
+def build_cycle_template(signal, time_axis, fs, samples_per_cycle=512):
+    signal = _replace_nonfinite(signal)
+    time_axis = np.asarray(time_axis, dtype=float)
+    signal = np.asarray(signal, dtype=float)
+    length = min(signal.size, time_axis.size)
+    if length < 8 or fs <= 0:
+        return np.array([]), 0.0
+
+    signal = signal[:length]
+    time_axis = time_axis[:length]
+    frequency_hz = _estimate_frequency_hz(signal, fs)
+    if frequency_hz <= 0:
+        return np.array([]), 0.0
+
+    phase = np.mod((time_axis - float(time_axis[0])) * frequency_hz, 1.0)
+    bin_indices = np.floor(phase * samples_per_cycle).astype(int)
+    bin_indices = np.clip(bin_indices, 0, samples_per_cycle - 1)
+
+    sums = np.bincount(bin_indices, weights=signal, minlength=samples_per_cycle)
+    counts = np.bincount(bin_indices, minlength=samples_per_cycle)
+    valid = counts > 0
+    if not np.any(valid):
+        return np.array([]), 0.0
+
+    template = np.zeros(samples_per_cycle, dtype=float)
+    template[valid] = sums[valid] / counts[valid]
+
+    if not np.all(valid):
+        valid_indices = np.flatnonzero(valid)
+        missing_indices = np.flatnonzero(~valid)
+        template[missing_indices] = np.interp(missing_indices, valid_indices, template[valid_indices])
+
+    return template, float(frequency_hz)
+
+
+def project_cycle_template(template, reference_time_axis, reference_frequency_hz):
+    template = np.asarray(template, dtype=float)
+    reference_time_axis = np.asarray(reference_time_axis, dtype=float)
+    if template.size == 0 or reference_time_axis.size == 0 or reference_frequency_hz <= 0:
+        return np.zeros_like(reference_time_axis)
+
+    phase = np.mod((reference_time_axis - float(reference_time_axis[0])) * reference_frequency_hz, 1.0)
+    phase_grid = np.linspace(0.0, 1.0, template.size, endpoint=False)
+    extended_phase = np.append(phase_grid, 1.0)
+    extended_template = np.append(template, template[0])
+    return np.interp(phase, extended_phase, extended_template)
+
+
+def estimate_template_phase_shift(reference_template, sample_template):
+    reference_template = _replace_nonfinite(reference_template)
+    sample_template = _replace_nonfinite(sample_template)
+    reference_template = np.asarray(reference_template, dtype=float)
+    sample_template = np.asarray(sample_template, dtype=float)
+    length = min(reference_template.size, sample_template.size)
+    if length < 8:
+        return 0.0
+
+    reference_template = reference_template[:length] - float(np.mean(reference_template[:length]))
+    sample_template = sample_template[:length] - float(np.mean(sample_template[:length]))
+
+    ref_std = float(np.std(reference_template))
+    sample_std = float(np.std(sample_template))
+    if ref_std <= 1e-12 or sample_std <= 1e-12:
+        return 0.0
+
+    best_shift = 0
+    best_score = -np.inf
+    for shift in range(length):
+        shifted = np.roll(sample_template, shift)
+        score = float(np.dot(reference_template, shifted))
+        if score > best_score:
+            best_score = score
+            best_shift = shift
+
+    return float(best_shift / length)
+
+
+def shift_cycle_template(template, shift_fraction):
+    template = np.asarray(template, dtype=float)
+    if template.size == 0:
+        return template
+
+    phase_grid = np.linspace(0.0, 1.0, template.size, endpoint=False)
+    shifted_phase = np.mod(phase_grid - float(shift_fraction), 1.0)
+    sort_indices = np.argsort(shifted_phase)
+    shifted_phase = shifted_phase[sort_indices]
+    shifted_values = template[sort_indices]
+    extended_phase = np.append(shifted_phase, shifted_phase[0] + 1.0)
+    extended_values = np.append(shifted_values, shifted_values[0])
+    return np.interp(phase_grid, extended_phase, extended_values)
+
+
 def calculate_manual_measurement(signal, time_axis, t1, t2):
     signal = _replace_nonfinite(signal)
     time_axis = np.asarray(time_axis, dtype=float)
@@ -1067,8 +1215,9 @@ def adaptive_scope_filter(signal, fs):
     signal_type = detect_signal_type(signal)
 
     if signal_type == "digital":
-        filtered = medfilt(signal, kernel_size=3)
-        filtered = anti_aliasing_filter(filtered, strength=3)
+        filtered = medfilt(signal, kernel_size=5)
+        filtered = anti_aliasing_filter(filtered, strength=5)
+        filtered = _savgol_smooth(filtered, window_fraction=0.025, polyorder=2)
         signal_min = float(np.min(signal))
         signal_max = float(np.max(signal))
         filtered = np.clip(filtered, signal_min, signal_max)
@@ -1076,12 +1225,12 @@ def adaptive_scope_filter(signal, fs):
 
     peak_to_peak = np.ptp(signal)
     if peak_to_peak > 0.5:
-        filtered = butter_lowpass(signal, fs, cutoff_ratio=0.055, order=4)
-        filtered = anti_aliasing_filter(filtered, strength=7)
-        filtered = _savgol_smooth(filtered, window_fraction=0.04, polyorder=2)
+        filtered = butter_lowpass(signal, fs, cutoff_ratio=0.04, order=4)
+        filtered = anti_aliasing_filter(filtered, strength=11)
+        filtered = _savgol_smooth(filtered, window_fraction=0.06, polyorder=2)
     else:
-        filtered = butter_lowpass(signal, fs, cutoff_ratio=0.045, order=4)
-        filtered = anti_aliasing_filter(filtered, strength=9)
-        filtered = _savgol_smooth(filtered, window_fraction=0.05, polyorder=2)
+        filtered = butter_lowpass(signal, fs, cutoff_ratio=0.03, order=4)
+        filtered = anti_aliasing_filter(filtered, strength=13)
+        filtered = _savgol_smooth(filtered, window_fraction=0.075, polyorder=2)
 
     return filtered

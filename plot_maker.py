@@ -431,7 +431,7 @@ def generate_fft_grafic(
 
     ax.set_xlabel("Frequency (Hz)", color="#919191")
     ax.set_ylabel("Amplitude (V)", color="#919191")
-    plt.title(f"{file_name} - FFT {channel_label}", color="#919191")
+    plt.title(f"FFT {channel_label}", color="#919191")
 
     buffer = BytesIO()
     fig.savefig(buffer, format="png", bbox_inches="tight", facecolor=fig.get_facecolor(), dpi=120)
@@ -493,7 +493,7 @@ def generate_fft_grafic_file(
 
     ax.set_xlabel("Frequency (Hz)", color="#000000")
     ax.set_ylabel("Amplitude (V)", color="#000000")
-    plt.title(f"{file_name} - FFT {channel_label}", color="#000000")
+    plt.title(f"FFT {channel_label}", color="#000000")
 
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
         fig.savefig(tmp_file.name, format="png", bbox_inches="tight", facecolor=fig.get_facecolor(), dpi=150)

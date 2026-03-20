@@ -316,3 +316,17 @@ def generate_current_latex(current_data):
         ("Peak-to-peak current", f"{current_data.get('current_peak_to_peak', 0)} A", ""),
     ]
     return generate_latex_table(rows, caption="Calculated Current Analysis", headers=("Value", ""))
+
+
+def generate_total_current_latex(total_current_data):
+    rows = [
+        ("Voltage channel", total_current_data.get("voltage_channel", "X"), ""),
+        ("Saved currents", total_current_data.get("saved_count", 0), ""),
+        ("Mean total current", f"{total_current_data.get('total_current_mean', 0)} A", ""),
+        ("RMS total current", f"{total_current_data.get('total_current_rms', 0)} A", ""),
+        ("Max total current", f"{total_current_data.get('total_current_max', 0)} A", ""),
+        ("Min total current", f"{total_current_data.get('total_current_min', 0)} A", ""),
+        ("Peak-to-peak total current", f"{total_current_data.get('total_current_peak_to_peak', 0)} A", ""),
+        ("Phase angle", f"{total_current_data.get('phase_angle_deg', 0)} deg", ""),
+    ]
+    return generate_latex_table(rows, caption="Total Current Analysis", headers=("Value", ""))

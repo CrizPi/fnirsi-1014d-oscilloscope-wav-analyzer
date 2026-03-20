@@ -141,7 +141,10 @@ def get_scope_measures(file):
             if i < 6:
 
                 raw = b3 * 256 + b2
-                value = raw / 1024
+                if name in {"Vmax", "Vmin", "Vrms", "Vpp", "Vp"}:
+                    value = raw / 1000
+                else:
+                    value = raw / 1024
 
             elif i == 6:  # Frequency
 

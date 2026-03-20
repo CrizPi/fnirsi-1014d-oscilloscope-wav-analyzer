@@ -30,6 +30,7 @@ from report import (
     generate_correlation_latex,
     generate_current_grafic_download,
     generate_current_latex,
+    generate_total_current_latex,
     generate_cursor_latex,
     generate_cycle_latex,
     generate_fft_grafic_download,
@@ -45,6 +46,7 @@ from signal_analyzer import (
     adaptive_scope_filter,
     apply_math_operation,
     apply_signal_calibration,
+    build_cycle_template,
     calculate_advanced_measures,
     calculate_correlation_analysis,
     calculate_current_analysis,
@@ -53,9 +55,12 @@ from signal_analyzer import (
     calculate_manual_measurement,
     calculate_math_measures,
     calculate_signal_statistics,
+    calculate_voltage_current_phase_angle,
     convert_scope_data,
+    estimate_frequency_hz,
     get_fft_spectrum,
     get_scope_fs_and_time,
+    project_cycle_template,
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -131,6 +136,7 @@ DEFAULT_FFT_SETTINGS = {
 }
 DEFAULT_CALCULUS_SETTINGS = {"channel": "X"}
 DEFAULT_CURRENT_SETTINGS = {"channel": "X", "method": "resistor", "component_value": "1"}
+DEFAULT_TOTAL_CURRENT_SETTINGS = {"voltage_channel": "X"}
 DEFAULT_CALIBRATION_SETTINGS = {
     "x_gain": 1.0,
     "y_gain": 1.0,
@@ -147,6 +153,7 @@ CH_CLEAR = np.zeros(751)
 ALLOWED_EXTENSIONS = {".wav"}
 ANALYSIS_CACHE = {}
 GRAPH_CACHE = {}
+CURRENT_WAVEFORM_STORE = {}
 CACHE_LOCK = Lock()
 MAX_CACHE_ITEMS = 32
 MAIN_WINDOW = None
@@ -255,8 +262,15 @@ def cleanup_upload_folder():
 atexit.register(cleanup_upload_folder)
 
 
-def clear_loaded_state():
+def clear_current_waveforms():
+    with CACHE_LOCK:
+        CURRENT_WAVEFORM_STORE.clear()
+
+
+def clear_loaded_state(preserve_current_library=False):
     cleanup_file()
+    if not preserve_current_library:
+        clear_current_waveforms()
     keys = (
         "file_wav",
         "original_name",
@@ -293,6 +307,9 @@ def clear_loaded_state():
     )
     for key in keys:
         session.pop(key, None)
+    if not preserve_current_library:
+        for key in ("current_snapshots", "total_current_enabled", "total_current_settings", "total_current_data"):
+            session.pop(key, None)
 
 
 def get_unique_filename():
@@ -359,11 +376,11 @@ def get_processed_signals(file_path, config, measures):
 
 
 def get_main_graph(time_axis, ch1, ch2, file_name, measures, file_path):
-    cache_key = ("main_graph", file_path, file_name, _freeze_value(measures), _freeze_value(get_calibration_settings()))
+    cache_key = ("main_graph", file_path, _freeze_value(measures), _freeze_value(get_calibration_settings()))
     cached = _cache_get(GRAPH_CACHE, cache_key)
     if cached is not None:
         return cached
-    graph = generate_grafic(time_axis, ch1, ch2, file_name, measures)
+    graph = generate_grafic(time_axis, ch1, ch2, "Oscilloscope Signals", measures)
     return _cache_set(GRAPH_CACHE, cache_key, graph)
 
 
@@ -458,6 +475,13 @@ def get_current_settings():
         "channel": settings.get("channel", "X"),
         "method": settings.get("method", "resistor"),
         "component_value": str(settings.get("component_value", "1")),
+    }
+
+
+def get_total_current_settings():
+    settings = session.get("total_current_settings", DEFAULT_TOTAL_CURRENT_SETTINGS.copy())
+    return {
+        "voltage_channel": settings.get("voltage_channel", "X"),
     }
 
 
@@ -572,7 +596,7 @@ def build_advanced_view(ch1, ch2, math_result, fs):
 def build_fft_view(ch1, ch2, math_result, fs, file_name):
     settings = get_fft_settings()
     if not session.get("fft_enabled"):
-        return generate_fft_grafic([], [], file_name, settings["channel"]), {
+        return generate_fft_grafic([], [], "", settings["channel"]), {
             "channel": settings["channel"],
             "scale": settings["scale"],
             "max_frequency": settings["max_frequency"],
@@ -643,8 +667,8 @@ def build_calculus_view(ch1, ch2, math_result, fs, time_axis, file_name):
             "integral_final": 0.0,
             "derivative": np.array([]),
             "integral": np.array([]),
-            "derivative_graph": generate_signal_analysis_grafic([], [], f"{file_name} - Derivative", "dV/dt (V/s)"),
-            "integral_graph": generate_signal_analysis_grafic([], [], f"{file_name} - Integral", "Integral (V*s)"),
+            "derivative_graph": generate_signal_analysis_grafic([], [], f"Derivative {selected_channel}", "dV/dt (V/s)"),
+            "integral_graph": generate_signal_analysis_grafic([], [], f"Integral {selected_channel}", "Integral (V*s)"),
         }
 
     cache_key = (
@@ -668,7 +692,7 @@ def build_calculus_view(ch1, ch2, math_result, fs, time_axis, file_name):
         calculus_data["derivative_graph"] = generate_signal_analysis_grafic(
             time_axis,
             calculus_data["derivative"],
-            f"{file_name} - Derivative {selected_channel}",
+            f"Derivative {selected_channel}",
             "dV/dt (V/s)",
         )
         _cache_set(GRAPH_CACHE, derivative_graph_key, calculus_data["derivative_graph"])
@@ -677,7 +701,7 @@ def build_calculus_view(ch1, ch2, math_result, fs, time_axis, file_name):
         calculus_data["integral_graph"] = generate_signal_analysis_grafic(
             time_axis,
             calculus_data["integral"],
-            f"{file_name} - Integral {selected_channel}",
+            f"Integral {selected_channel}",
             "Integral (V*s)",
         )
         _cache_set(GRAPH_CACHE, integral_graph_key, calculus_data["integral_graph"])
@@ -696,7 +720,8 @@ def build_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
         "current_max": 0.0,
         "current_min": 0.0,
         "current_peak_to_peak": 0.0,
-        "graph": generate_voltage_current_grafic([], [], [], f"{file_name} - Current analysis"),
+        "current": np.array([]),
+        "graph": generate_voltage_current_grafic([], [], [], "Current Analysis"),
         "enabled": False,
     }
     if not session.get("current_enabled"):
@@ -737,10 +762,154 @@ def build_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
             time_axis,
             selected_signal,
             current_data["current"],
-            f"{file_name} - Current analysis {settings['channel']}",
+            f"Current Analysis {settings['channel']}",
         )
         _cache_set(GRAPH_CACHE, graph_key, current_data["graph"])
     return _cache_set(ANALYSIS_CACHE, cache_key, current_data)
+
+
+def save_current_snapshot(snapshot_name, current_data, time_axis, file_name):
+    if not current_data.get("enabled"):
+        return False
+
+    waveform_id = uuid.uuid4().hex
+    template, frequency_hz = build_cycle_template(
+        np.asarray(current_data.get("current", []), dtype=float),
+        np.asarray(time_axis, dtype=float),
+        1.0 / np.mean(np.diff(time_axis)) if np.asarray(time_axis).size > 1 else 0.0,
+    )
+    with CACHE_LOCK:
+        CURRENT_WAVEFORM_STORE[waveform_id] = {
+            "time_axis": np.asarray(time_axis, dtype=float),
+            "current": np.asarray(current_data.get("current", []), dtype=float),
+            "template": template,
+            "frequency_hz": frequency_hz,
+        }
+
+    snapshots = session.get("current_snapshots", [])
+    snapshots.append(
+        {
+            "id": waveform_id,
+            "name": snapshot_name,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "file_name": file_name,
+            "channel": current_data.get("channel", "X"),
+            "method": current_data.get("method", "resistor"),
+            "component_value": current_data.get("component_value", 0.0),
+            "current_rms": current_data.get("current_rms", 0.0),
+            "current_peak_to_peak": current_data.get("current_peak_to_peak", 0.0),
+        }
+    )
+    trimmed = snapshots[-20:]
+    session["current_snapshots"] = trimmed
+    valid_ids = {item["id"] for item in trimmed}
+    with CACHE_LOCK:
+        stale_ids = [key for key in CURRENT_WAVEFORM_STORE if key not in valid_ids]
+        for key in stale_ids:
+            CURRENT_WAVEFORM_STORE.pop(key, None)
+    return True
+
+
+def _resample_current_to_reference(reference_time_axis, reference_frequency_hz, sample):
+    reference_time_axis = np.asarray(reference_time_axis, dtype=float)
+    template = np.asarray(sample.get("template", []), dtype=float)
+    if reference_time_axis.size == 0:
+        return np.zeros_like(reference_time_axis)
+    if template.size > 0 and reference_frequency_hz > 0:
+        return project_cycle_template(template, reference_time_axis, reference_frequency_hz)
+
+    sample_time = np.asarray(sample.get("time_axis", []), dtype=float)
+    sample_current = np.asarray(sample.get("current", []), dtype=float)
+    if sample_time.size == 0 or sample_current.size == 0:
+        return np.zeros_like(reference_time_axis)
+    length = min(sample_time.size, sample_current.size)
+    sample_time = sample_time[:length]
+    sample_current = sample_current[:length]
+    reference_relative = reference_time_axis - float(reference_time_axis[0])
+    sample_relative = sample_time - float(sample_time[0])
+    return np.interp(reference_relative, sample_relative, sample_current, left=0.0, right=0.0)
+
+
+def build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
+    settings = get_total_current_settings()
+    empty = {
+        "enabled": False,
+        "voltage_channel": settings["voltage_channel"],
+        "saved_count": len(session.get("current_snapshots", [])),
+        "total_current_mean": 0.0,
+        "total_current_rms": 0.0,
+        "total_current_max": 0.0,
+        "total_current_min": 0.0,
+        "total_current_peak_to_peak": 0.0,
+        "phase_angle_deg": 0.0,
+        "graph": generate_voltage_current_grafic([], [], [], "Total Current Analysis"),
+    }
+    if not session.get("total_current_enabled"):
+        return empty
+
+    saved_metadata = session.get("current_snapshots", [])
+    if not saved_metadata:
+        return empty
+
+    signals = {
+        "X": ch1,
+        "Y": ch2,
+        "MATH": math_result if math_result is not None else np.array([]),
+    }
+    voltage = np.asarray(signals.get(settings["voltage_channel"], ch1), dtype=float)
+    reference_time_axis = np.asarray(time_axis, dtype=float)
+    if voltage.size == 0 or reference_time_axis.size == 0:
+        return empty
+    reference_frequency_hz = estimate_frequency_hz(voltage, fs)
+
+    total_current = np.zeros_like(reference_time_axis, dtype=float)
+    used_count = 0
+    for item in saved_metadata:
+        sample = _cache_get(CURRENT_WAVEFORM_STORE, item["id"])
+        if sample is None:
+            continue
+        total_current += _resample_current_to_reference(reference_time_axis, reference_frequency_hz, sample)
+        used_count += 1
+
+    if used_count == 0:
+        return empty
+
+    finite_current = total_current[np.isfinite(total_current)]
+    if finite_current.size == 0:
+        return empty
+
+    phase_data = calculate_voltage_current_phase_angle(voltage, total_current, fs)
+    graph_key = (
+        "total_current_graph",
+        session.get("file_wav"),
+        settings["voltage_channel"],
+        tuple(item["id"] for item in saved_metadata),
+        _freeze_value(get_calibration_settings()),
+        session.get("math_operation"),
+    )
+    graph = _cache_get(GRAPH_CACHE, graph_key)
+    if graph is None:
+        graph = generate_voltage_current_grafic(
+            reference_time_axis,
+            voltage,
+            total_current,
+            f"Total Current Analysis {settings['voltage_channel']}",
+        )
+        _cache_set(GRAPH_CACHE, graph_key, graph)
+
+    return {
+        "enabled": True,
+        "voltage_channel": settings["voltage_channel"],
+        "saved_count": used_count,
+        "total_current_mean": round(float(np.mean(finite_current)), 6),
+        "total_current_rms": round(float(np.sqrt(np.mean(finite_current ** 2))), 6),
+        "total_current_max": round(float(np.max(finite_current)), 6),
+        "total_current_min": round(float(np.min(finite_current)), 6),
+        "total_current_peak_to_peak": round(float(np.ptp(finite_current)), 6),
+        "phase_angle_deg": phase_data.get("phase_angle_deg", 0.0),
+        "graph": graph,
+        "current": total_current,
+    }
 
 
 def build_correlation_view(ch1, ch2, fs, file_name):
@@ -753,7 +922,7 @@ def build_correlation_view(ch1, ch2, fs, file_name):
             "delay_value": 0.0,
             "delay_unit": "s",
             "enabled": False,
-            "graph": generate_correlation_grafic([], [], f"{file_name} - Correlation"),
+            "graph": generate_correlation_grafic([], [], "Correlation"),
         }
 
     cache_key = ("correlation", session.get("file_wav"), _freeze_value(get_calibration_settings()))
@@ -769,7 +938,7 @@ def build_correlation_view(ch1, ch2, fs, file_name):
         correlation_data["graph"] = generate_correlation_grafic(
             correlation_data["lags_seconds"],
             correlation_data["correlation"],
-            f"{file_name} - Correlation",
+            "Correlation",
             marker_x=correlation_data["delay_seconds"],
             marker_y=correlation_data["max_correlation"],
         )
@@ -988,7 +1157,7 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
         "grafica_math": generate_grafic(T_CLEAR, [], [], "MATH", math_result=None, show_empty=True),
         "math_operation": None,
         "math_measures": DEFAULT_MATH_MEASURES.copy(),
-        "fft_graph": generate_fft_grafic([], [], "No File", "X"),
+        "fft_graph": generate_fft_grafic([], [], "", "X"),
         "fft_data": {
             "channel": "X",
             "scale": "linear",
@@ -1009,8 +1178,8 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "enabled": False,
             "derivative_peak": 0.0,
             "integral_final": 0.0,
-            "derivative_graph": generate_signal_analysis_grafic([], [], "No File - Derivative", "dV/dt (V/s)"),
-            "integral_graph": generate_signal_analysis_grafic([], [], "No File - Integral", "Integral (V*s)"),
+            "derivative_graph": generate_signal_analysis_grafic([], [], "Derivative X", "dV/dt (V/s)"),
+            "integral_graph": generate_signal_analysis_grafic([], [], "Integral X", "Integral (V*s)"),
         },
         "current_data": {
             "channel": "X",
@@ -1022,15 +1191,28 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "current_max": 0.0,
             "current_min": 0.0,
             "current_peak_to_peak": 0.0,
-            "graph": generate_voltage_current_grafic([], [], [], "No File - Current analysis"),
+            "current": np.array([]),
+            "graph": generate_voltage_current_grafic([], [], [], "Current Analysis"),
             "enabled": False,
+        },
+        "total_current_data": {
+            "enabled": False,
+            "voltage_channel": "X",
+            "saved_count": 0,
+            "total_current_mean": 0.0,
+            "total_current_rms": 0.0,
+            "total_current_max": 0.0,
+            "total_current_min": 0.0,
+            "total_current_peak_to_peak": 0.0,
+            "phase_angle_deg": 0.0,
+            "graph": generate_voltage_current_grafic([], [], [], "Total Current Analysis"),
         },
         "correlation_data": {
             "enabled": False,
             "max_correlation": 0.0,
             "delay_value": 0.0,
             "delay_unit": "s",
-            "graph": generate_correlation_grafic([], [], "No File - Correlation"),
+            "graph": generate_correlation_grafic([], [], "Correlation"),
         },
         "calibration_data": build_calibration_view(),
         "cursor_data": {
@@ -1078,6 +1260,7 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "delta_freq_y_unit": "Hz",
         },
         "snapshots": session.get("snapshots", []),
+        "current_snapshots": session.get("current_snapshots", []),
         "error_message": error_message,
         "toast_message": toast_message,
         "toast_variant": toast_variant,
@@ -1229,6 +1412,8 @@ def prepare_analysis_context(action_name=None):
                 "enabled": bool(session.get("current_enabled")),
             }
 
+    total_current_data = build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name)
+
     if full_refresh or action_name == "correlation" or "correlation_data" not in session:
         correlation_data = build_correlation_view(ch1, ch2, fs, file_name)
     else:
@@ -1278,6 +1463,7 @@ def prepare_analysis_context(action_name=None):
         "advanced_data": advanced_data,
         "calculus_data": calculus_data,
         "current_data": current_data,
+        "total_current_data": total_current_data,
         "correlation_data": correlation_data,
         "cursor_data": cursor_data,
         "cycle_data": cycle_data,
@@ -1313,6 +1499,17 @@ def store_enabled_views(context):
             "current_min": context["current_data"]["current_min"],
             "current_peak_to_peak": context["current_data"]["current_peak_to_peak"],
         }
+    if context["total_current_data"]["enabled"]:
+        session["total_current_data"] = {
+            "voltage_channel": context["total_current_data"]["voltage_channel"],
+            "saved_count": context["total_current_data"]["saved_count"],
+            "total_current_mean": context["total_current_data"]["total_current_mean"],
+            "total_current_rms": context["total_current_data"]["total_current_rms"],
+            "total_current_max": context["total_current_data"]["total_current_max"],
+            "total_current_min": context["total_current_data"]["total_current_min"],
+            "total_current_peak_to_peak": context["total_current_data"]["total_current_peak_to_peak"],
+            "phase_angle_deg": context["total_current_data"]["phase_angle_deg"],
+        }
     if context["correlation_data"]["enabled"]:
         session["correlation_data"] = {
             "max_correlation": context["correlation_data"]["max_correlation"],
@@ -1346,6 +1543,7 @@ def main():
     toast_message = session.pop("toast_message", None)
     toast_variant = session.pop("toast_variant", "success")
     pending_snapshot_name = None
+    pending_current_snapshot_name = None
     action_name = None
 
     if request.method == "POST" and "upload-file" in request.form:
@@ -1356,7 +1554,7 @@ def main():
             if not is_allowed_file(uploaded_file.filename):
                 return render_template("main.html", **build_empty_view("Solo se permiten archivos .wav."))
 
-            clear_loaded_state()
+            clear_loaded_state(preserve_current_library=True)
             file_path = os.path.join(UPLOAD_FOLDER, get_unique_filename())
             uploaded_file.save(file_path)
 
@@ -1381,6 +1579,8 @@ def main():
                     "calculus_settings": DEFAULT_CALCULUS_SETTINGS.copy(),
                     "current_enabled": False,
                     "current_settings": DEFAULT_CURRENT_SETTINGS.copy(),
+                    "total_current_enabled": bool(session.get("current_snapshots")),
+                    "total_current_settings": session.get("total_current_settings", DEFAULT_TOTAL_CURRENT_SETTINGS.copy()),
                     "correlation_enabled": False,
                     "calibration_enabled": False,
                     "calibration_settings": DEFAULT_CALIBRATION_SETTINGS.copy(),
@@ -1461,6 +1661,21 @@ def main():
             }.get(request.form.get("current_method", "resistor"), "component")
             toast_message = f"Current analysis applied on channel {session['current_settings']['channel']} using {method_label} mode."
             toast_variant = "success"
+
+    if request.method == "POST" and "current_save" in request.form:
+        action_name = "current"
+        session["current_enabled"] = True
+        pending_current_snapshot_name = (request.form.get("current_snapshot_name") or "").strip() or "Current snapshot"
+        toast_variant = "success"
+
+    if request.method == "POST" and "total_current_apply" in request.form:
+        action_name = "current"
+        session["total_current_settings"] = {
+            "voltage_channel": request.form.get("total_current_voltage_channel", "X"),
+        }
+        session["total_current_enabled"] = True
+        toast_message = f"Total current analysis applied using voltage channel {session['total_current_settings']['voltage_channel']}."
+        toast_variant = "success"
 
     if request.method == "POST" and "correlation_apply" in request.form:
         action_name = "correlation"
@@ -1554,6 +1769,18 @@ def main():
             context["comparison_data"] = build_comparison_view(context["file_name"], context["measures"])
             toast_message = f"Snapshot saved: {pending_snapshot_name}"
             toast_variant = "success"
+        if pending_current_snapshot_name:
+            if save_current_snapshot(pending_current_snapshot_name, context["current_data"], context["time_axis"], context["file_name"]):
+                context["total_current_data"] = build_total_current_view(
+                    context["ch1"],
+                    context["ch2"],
+                    context["math_result"],
+                    context["fs"],
+                    context["time_axis"],
+                    context["file_name"],
+                )
+                toast_message = f"Current snapshot saved: {pending_current_snapshot_name}"
+                toast_variant = "success"
         store_enabled_views(context)
     except (OSError, ScopeFileError, ValueError, ZeroDivisionError) as exc:
         clear_loaded_state()
@@ -1577,12 +1804,14 @@ def main():
         advanced_data=context["advanced_data"],
         calculus_data=context["calculus_data"],
         current_data=context["current_data"],
+        total_current_data=context["total_current_data"],
         correlation_data=context["correlation_data"],
         calibration_data=context["calibration_data"],
         cursor_data=context["cursor_data"],
         cycle_data=context["cycle_data"],
         comparison_data=context["comparison_data"],
         snapshots=session.get("snapshots", []),
+        current_snapshots=session.get("current_snapshots", []),
         error_message=error_message,
         toast_message=toast_message,
         toast_variant=toast_variant,
@@ -1655,6 +1884,14 @@ def download_current_latex():
     if not current_data:
         return "No hay analisis de corriente", 400
     return Response(generate_current_latex(current_data), mimetype="text/plain")
+
+
+@app.route("/download_total_current_latex")
+def download_total_current_latex():
+    total_current_data = session.get("total_current_data")
+    if not total_current_data:
+        return "No hay analisis de corriente total", 400
+    return Response(generate_total_current_latex(total_current_data), mimetype="text/plain")
 
 
 @app.route("/download_cursor_latex")
@@ -1775,7 +2012,7 @@ def download_derivative_graph():
     png_path = generate_signal_analysis_download(
         context["time_axis"],
         context["calculus_data"]["derivative"],
-        f"{context['file_name']} - Derivative {context['calculus_data']['channel']}",
+        f"Derivative {context['calculus_data']['channel']}",
         "dV/dt (V/s)",
     )
     cleanup_temp_download(png_path)
@@ -1792,7 +2029,7 @@ def download_integral_graph():
     png_path = generate_signal_analysis_download(
         context["time_axis"],
         context["calculus_data"]["integral"],
-        f"{context['file_name']} - Integral {context['calculus_data']['channel']}",
+        f"Integral {context['calculus_data']['channel']}",
         "Integral (V*s)",
     )
     cleanup_temp_download(png_path)
@@ -1818,7 +2055,7 @@ def download_current_graph():
         context["time_axis"],
         selected_signal,
         current_data["current"],
-        f"{context['file_name']} - Current analysis {current_data['channel']}",
+        f"Current Analysis {current_data['channel']}",
     )
     cleanup_temp_download(png_path)
     return send_file(
@@ -1826,6 +2063,37 @@ def download_current_graph():
         mimetype="image/png",
         as_attachment=True,
         download_name=f"{context['file_name']}_current_{current_data['channel']}.png",
+    )
+
+
+@app.route("/download_total_current_graph")
+def download_total_current_graph():
+    if not session.get("total_current_enabled"):
+        return "No hay analisis de corriente total", 400
+
+    context = prepare_download_data("current")
+    total_current_data = context["total_current_data"]
+    if not total_current_data.get("enabled"):
+        return "No hay analisis de corriente total", 400
+
+    signals = {
+        "X": context["ch1"],
+        "Y": context["ch2"],
+        "MATH": context["math_result"] if context["math_result"] is not None else np.array([]),
+    }
+    voltage = signals.get(total_current_data["voltage_channel"], context["ch1"])
+    png_path = generate_current_grafic_download(
+        context["time_axis"],
+        voltage,
+        total_current_data["current"],
+        f"Total Current Analysis {total_current_data['voltage_channel']}",
+    )
+    cleanup_temp_download(png_path)
+    return send_file(
+        png_path,
+        mimetype="image/png",
+        as_attachment=True,
+        download_name=f"{context['file_name']}_total_current_{total_current_data['voltage_channel']}.png",
     )
 
 
@@ -1839,7 +2107,7 @@ def download_correlation_graph():
     png_path = generate_correlation_grafic_download(
         context["correlation_data"]["lags_seconds"],
         context["correlation_data"]["correlation"],
-        f"{context['file_name']} - Correlation",
+        "Correlation",
         marker_x=context["correlation_data"]["delay_seconds"],
         marker_y=context["correlation_data"]["max_correlation"],
     )
