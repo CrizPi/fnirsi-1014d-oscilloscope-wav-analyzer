@@ -2,6 +2,7 @@ import atexit
 import os
 import re
 import socket
+import sys
 import time
 import uuid
 from datetime import datetime
@@ -19,6 +20,7 @@ from plot_maker import (
     generate_fft_grafic,
     generate_grafic,
     generate_signal_analysis_grafic,
+    generate_voltage_current_grafic,
 )
 from report import (
     generate_advanced_measures_latex,
@@ -26,6 +28,8 @@ from report import (
     generate_comparison_latex,
     generate_correlation_grafic_download,
     generate_correlation_latex,
+    generate_current_grafic_download,
+    generate_current_latex,
     generate_cursor_latex,
     generate_cycle_latex,
     generate_fft_grafic_download,
@@ -43,6 +47,7 @@ from signal_analyzer import (
     apply_signal_calibration,
     calculate_advanced_measures,
     calculate_correlation_analysis,
+    calculate_current_analysis,
     calculate_cycle_analysis,
     calculate_derivative_integral,
     calculate_manual_measurement,
@@ -53,14 +58,20 @@ from signal_analyzer import (
     get_scope_fs_and_time,
 )
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+APP_NAME = "FNIRSI 1014D Analyzer"
+APP_DATA_DIR = os.path.join(os.getenv("LOCALAPPDATA", BASE_DIR), "FNIRSI1014DAnalyzer")
+UPLOAD_FOLDER = os.path.join(APP_DATA_DIR, "uploads")
+os.makedirs(APP_DATA_DIR, exist_ok=True)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "static"),
+)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", uuid.uuid4().hex)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 DEFAULT_CONFIG = {
     "volts_div": [0, 0],
@@ -119,6 +130,7 @@ DEFAULT_FFT_SETTINGS = {
     "window_type": "hann",
 }
 DEFAULT_CALCULUS_SETTINGS = {"channel": "X"}
+DEFAULT_CURRENT_SETTINGS = {"channel": "X", "method": "resistor", "component_value": "1"}
 DEFAULT_CALIBRATION_SETTINGS = {
     "x_gain": 1.0,
     "y_gain": 1.0,
@@ -144,6 +156,7 @@ AJAX_MODULE_ACTIONS = {
     "statistics",
     "advanced",
     "calculus",
+    "current",
     "correlation",
     "calibration",
     "cursor",
@@ -159,8 +172,11 @@ class DesktopApi:
             return {"ok": False, "message": "Desktop window is not available."}
 
         try:
+            save_dialog = getattr(getattr(webview, "FileDialog", None), "SAVE", None)
+            if save_dialog is None:
+                save_dialog = webview.SAVE_DIALOG
             file_path = MAIN_WINDOW.create_file_dialog(
-                webview.SAVE_DIALOG,
+                save_dialog,
                 save_filename=filename or "download.bin",
             )
             if not file_path:
@@ -257,6 +273,9 @@ def clear_loaded_state():
         "calculus_enabled",
         "calculus_settings",
         "calculus_data",
+        "current_enabled",
+        "current_settings",
+        "current_data",
         "correlation_enabled",
         "correlation_data",
         "calibration_settings",
@@ -395,6 +414,18 @@ def get_correlation_graph_key():
     return ("correlation_graph", session.get("file_wav"), _freeze_value(get_calibration_settings()))
 
 
+def get_current_graph_key(selected_channel, method, component_value):
+    return (
+        "current_graph",
+        session.get("file_wav"),
+        selected_channel,
+        method,
+        component_value,
+        _freeze_value(get_calibration_settings()),
+        session.get("math_operation"),
+    )
+
+
 def process_math(ch1, ch2, fs):
     math_operation = session.get("math_operation")
     if not math_operation:
@@ -419,6 +450,15 @@ def get_fft_settings():
 def get_calculus_settings():
     settings = session.get("calculus_settings", DEFAULT_CALCULUS_SETTINGS.copy())
     return {"channel": settings.get("channel", "X")}
+
+
+def get_current_settings():
+    settings = session.get("current_settings", DEFAULT_CURRENT_SETTINGS.copy())
+    return {
+        "channel": settings.get("channel", "X"),
+        "method": settings.get("method", "resistor"),
+        "component_value": str(settings.get("component_value", "1")),
+    }
 
 
 def get_calibration_settings():
@@ -467,6 +507,13 @@ def parse_fft_max_frequency(raw_value):
     value, normalized = parse_float_field(raw_value, "frecuencia maxima de FFT")
     if value <= 0:
         raise ValueError("La frecuencia maxima de FFT debe ser mayor que cero.")
+    return value, normalized
+
+
+def parse_positive_component_value(raw_value, field_name):
+    value, normalized = parse_float_field(raw_value, field_name)
+    if value <= 0:
+        raise ValueError(f"El campo {field_name} debe ser mayor que cero.")
     return value, normalized
 
 
@@ -635,6 +682,65 @@ def build_calculus_view(ch1, ch2, math_result, fs, time_axis, file_name):
         )
         _cache_set(GRAPH_CACHE, integral_graph_key, calculus_data["integral_graph"])
     return _cache_set(ANALYSIS_CACHE, cache_key, calculus_data)
+
+
+def build_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
+    settings = get_current_settings()
+    empty = {
+        "channel": settings["channel"],
+        "method": settings["method"],
+        "component_value_input": settings["component_value"],
+        "component_value": 0.0,
+        "current_mean": 0.0,
+        "current_rms": 0.0,
+        "current_max": 0.0,
+        "current_min": 0.0,
+        "current_peak_to_peak": 0.0,
+        "graph": generate_voltage_current_grafic([], [], [], f"{file_name} - Current analysis"),
+        "enabled": False,
+    }
+    if not session.get("current_enabled"):
+        return empty
+
+    try:
+        component_value = float(settings["component_value"])
+    except (TypeError, ValueError):
+        return empty
+
+    signals = {
+        "X": ch1,
+        "Y": ch2,
+        "MATH": math_result if math_result is not None else np.array([]),
+    }
+    selected_signal = signals.get(settings["channel"], ch1)
+
+    cache_key = (
+        "current",
+        session.get("file_wav"),
+        settings["channel"],
+        settings["method"],
+        component_value,
+        _freeze_value(get_calibration_settings()),
+        session.get("math_operation"),
+    )
+    cached = _cache_get(ANALYSIS_CACHE, cache_key)
+    if cached is not None:
+        return cached
+
+    current_data = calculate_current_analysis(selected_signal, fs, settings["method"], component_value)
+    current_data["channel"] = settings["channel"]
+    current_data["component_value_input"] = settings["component_value"]
+    graph_key = get_current_graph_key(settings["channel"], settings["method"], component_value)
+    current_data["graph"] = _cache_get(GRAPH_CACHE, graph_key)
+    if current_data["graph"] is None:
+        current_data["graph"] = generate_voltage_current_grafic(
+            time_axis,
+            selected_signal,
+            current_data["current"],
+            f"{file_name} - Current analysis {settings['channel']}",
+        )
+        _cache_set(GRAPH_CACHE, graph_key, current_data["graph"])
+    return _cache_set(ANALYSIS_CACHE, cache_key, current_data)
 
 
 def build_correlation_view(ch1, ch2, fs, file_name):
@@ -906,6 +1012,19 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "derivative_graph": generate_signal_analysis_grafic([], [], "No File - Derivative", "dV/dt (V/s)"),
             "integral_graph": generate_signal_analysis_grafic([], [], "No File - Integral", "Integral (V*s)"),
         },
+        "current_data": {
+            "channel": "X",
+            "method": "resistor",
+            "component_value_input": "1",
+            "component_value": 0.0,
+            "current_mean": 0.0,
+            "current_rms": 0.0,
+            "current_max": 0.0,
+            "current_min": 0.0,
+            "current_peak_to_peak": 0.0,
+            "graph": generate_voltage_current_grafic([], [], [], "No File - Current analysis"),
+            "enabled": False,
+        },
         "correlation_data": {
             "enabled": False,
             "max_correlation": 0.0,
@@ -996,6 +1115,7 @@ def build_ajax_fragment_response(rendered_html, action_name, error_message=None)
         "statistics": "module-stat",
         "advanced": "module-advanced",
         "calculus": "module-calculus",
+        "current": "module-current",
         "correlation": "module-correlation",
         "calibration": "module-calibration",
         "cursor": "module-cursor",
@@ -1084,6 +1204,31 @@ def prepare_analysis_context(action_name=None):
                 "integral_graph": integral_graph,
             }
 
+    if full_refresh or action_name == "current" or "current_data" not in session:
+        current_data = build_current_view(ch1, ch2, math_result, fs, time_axis, file_name)
+    else:
+        current_data = session.get("current_data", {})
+        selected_channel = current_data.get("channel", get_current_settings()["channel"])
+        method = current_data.get("method", get_current_settings()["method"])
+        component_value = current_data.get("component_value", 0.0)
+        current_graph = _cache_get(GRAPH_CACHE, get_current_graph_key(selected_channel, method, component_value))
+        if current_graph is None:
+            current_data = build_current_view(ch1, ch2, math_result, fs, time_axis, file_name)
+        else:
+            current_data = {
+                "channel": selected_channel,
+                "method": method,
+                "component_value_input": current_data.get("component_value_input", get_current_settings()["component_value"]),
+                "component_value": component_value,
+                "current_mean": current_data.get("current_mean", 0.0),
+                "current_rms": current_data.get("current_rms", 0.0),
+                "current_max": current_data.get("current_max", 0.0),
+                "current_min": current_data.get("current_min", 0.0),
+                "current_peak_to_peak": current_data.get("current_peak_to_peak", 0.0),
+                "graph": current_graph,
+                "enabled": bool(session.get("current_enabled")),
+            }
+
     if full_refresh or action_name == "correlation" or "correlation_data" not in session:
         correlation_data = build_correlation_view(ch1, ch2, fs, file_name)
     else:
@@ -1132,6 +1277,7 @@ def prepare_analysis_context(action_name=None):
         "statistics_data": statistics_data,
         "advanced_data": advanced_data,
         "calculus_data": calculus_data,
+        "current_data": current_data,
         "correlation_data": correlation_data,
         "cursor_data": cursor_data,
         "cycle_data": cycle_data,
@@ -1154,6 +1300,18 @@ def store_enabled_views(context):
             "channel": context["calculus_data"]["channel"],
             "derivative_peak": context["calculus_data"]["derivative_peak"],
             "integral_final": context["calculus_data"]["integral_final"],
+        }
+    if context["current_data"]["enabled"]:
+        session["current_data"] = {
+            "channel": context["current_data"]["channel"],
+            "method": context["current_data"]["method"],
+            "component_value_input": context["current_data"]["component_value_input"],
+            "component_value": context["current_data"]["component_value"],
+            "current_mean": context["current_data"]["current_mean"],
+            "current_rms": context["current_data"]["current_rms"],
+            "current_max": context["current_data"]["current_max"],
+            "current_min": context["current_data"]["current_min"],
+            "current_peak_to_peak": context["current_data"]["current_peak_to_peak"],
         }
     if context["correlation_data"]["enabled"]:
         session["correlation_data"] = {
@@ -1221,6 +1379,8 @@ def main():
                     "advanced_enabled": False,
                     "calculus_enabled": False,
                     "calculus_settings": DEFAULT_CALCULUS_SETTINGS.copy(),
+                    "current_enabled": False,
+                    "current_settings": DEFAULT_CURRENT_SETTINGS.copy(),
                     "correlation_enabled": False,
                     "calibration_enabled": False,
                     "calibration_settings": DEFAULT_CALIBRATION_SETTINGS.copy(),
@@ -1277,6 +1437,30 @@ def main():
         session["calculus_settings"] = {"channel": request.form.get("calculus_channel", "X")}
         toast_message = f"Derivative and integral applied on channel {session['calculus_settings']['channel']}"
         toast_variant = "success"
+
+    if request.method == "POST" and "current_apply" in request.form:
+        action_name = "current"
+        try:
+            component_value, normalized = parse_positive_component_value(
+                request.form.get("current_component_value"),
+                "valor del componente",
+            )
+        except ValueError as exc:
+            error_message = str(exc)
+        else:
+            session["current_enabled"] = True
+            session["current_settings"] = {
+                "channel": request.form.get("current_channel", "X"),
+                "method": request.form.get("current_method", "resistor"),
+                "component_value": normalized,
+            }
+            method_label = {
+                "resistor": "resistor",
+                "capacitor": "capacitor",
+                "inductor": "inductor",
+            }.get(request.form.get("current_method", "resistor"), "component")
+            toast_message = f"Current analysis applied on channel {session['current_settings']['channel']} using {method_label} mode."
+            toast_variant = "success"
 
     if request.method == "POST" and "correlation_apply" in request.form:
         action_name = "correlation"
@@ -1392,6 +1576,7 @@ def main():
         statistics_data=context["statistics_data"],
         advanced_data=context["advanced_data"],
         calculus_data=context["calculus_data"],
+        current_data=context["current_data"],
         correlation_data=context["correlation_data"],
         calibration_data=context["calibration_data"],
         cursor_data=context["cursor_data"],
@@ -1464,6 +1649,14 @@ def download_calibration_latex():
     return Response(generate_calibration_latex(get_calibration_settings()), mimetype="text/plain")
 
 
+@app.route("/download_current_latex")
+def download_current_latex():
+    current_data = session.get("current_data")
+    if not current_data:
+        return "No hay analisis de corriente", 400
+    return Response(generate_current_latex(current_data), mimetype="text/plain")
+
+
 @app.route("/download_cursor_latex")
 def download_cursor_latex():
     cursor_data = session.get("cursor_data")
@@ -1518,9 +1711,9 @@ def download_comparison_latex():
     return Response(generate_comparison_latex(comparison_data), mimetype="text/plain")
 
 
-def prepare_download_data():
+def prepare_download_data(action_name=None):
     try:
-        return prepare_analysis_context()
+        return prepare_analysis_context(action_name)
     except (OSError, ScopeFileError, ValueError, ZeroDivisionError):
         return None
 
@@ -1576,7 +1769,7 @@ def download_fft_graph():
 def download_derivative_graph():
     if not session.get("calculus_enabled"):
         return "Primero debes aplicar Derivative & Integral", 400
-    context = prepare_download_data()
+    context = prepare_download_data("calculus")
     if not context:
         return "No hay archivo cargado o el archivo es invalido", 400
     png_path = generate_signal_analysis_download(
@@ -1593,7 +1786,7 @@ def download_derivative_graph():
 def download_integral_graph():
     if not session.get("calculus_enabled"):
         return "Primero debes aplicar Derivative & Integral", 400
-    context = prepare_download_data()
+    context = prepare_download_data("calculus")
     if not context:
         return "No hay archivo cargado o el archivo es invalido", 400
     png_path = generate_signal_analysis_download(
@@ -1606,11 +1799,41 @@ def download_integral_graph():
     return send_file(png_path, mimetype="image/png", as_attachment=True, download_name=f"{context['file_name']}_integral_{context['calculus_data']['channel']}.png")
 
 
+@app.route("/download_current_graph")
+def download_current_graph():
+    if not session.get("current_enabled"):
+        return "Primero debes aplicar Current", 400
+    context = prepare_download_data("current")
+    if not context:
+        return "No hay archivo cargado o el archivo es invalido", 400
+
+    current_data = context["current_data"]
+    signals = {
+        "X": context["ch1"],
+        "Y": context["ch2"],
+        "MATH": context["math_result"] if context["math_result"] is not None else np.array([]),
+    }
+    selected_signal = signals.get(current_data["channel"], context["ch1"])
+    png_path = generate_current_grafic_download(
+        context["time_axis"],
+        selected_signal,
+        current_data["current"],
+        f"{context['file_name']} - Current analysis {current_data['channel']}",
+    )
+    cleanup_temp_download(png_path)
+    return send_file(
+        png_path,
+        mimetype="image/png",
+        as_attachment=True,
+        download_name=f"{context['file_name']}_current_{current_data['channel']}.png",
+    )
+
+
 @app.route("/download_correlation_graph")
 def download_correlation_graph():
     if not session.get("correlation_enabled"):
         return "Primero debes aplicar Correlation", 400
-    context = prepare_download_data()
+    context = prepare_download_data("correlation")
     if not context:
         return "No hay archivo cargado o el archivo es invalido", 400
     png_path = generate_correlation_grafic_download(
@@ -1624,35 +1847,36 @@ def download_correlation_graph():
     return send_file(png_path, mimetype="image/png", as_attachment=True, download_name=f"{context['file_name']}_correlation.png")
 
 
-if __name__ == "__main__":
-    host = "127.0.0.1"
-    port = 5000
+def run_flask_server(host="127.0.0.1", port=5000):
+    app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
+
+
+def wait_for_server(host="127.0.0.1", port=5000, timeout_seconds=10):
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.1)
+    return False
+
+
+def launch_desktop(host="127.0.0.1", port=5000, width=1200, height=800):
+    global MAIN_WINDOW
     desktop_api = DesktopApi()
 
-    def run_flask():
-        app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
-
-    def wait_for_server(timeout_seconds=10):
-        deadline = time.time() + timeout_seconds
-        while time.time() < deadline:
-            try:
-                with socket.create_connection((host, port), timeout=0.5):
-                    return True
-            except OSError:
-                time.sleep(0.1)
-        return False
-
-    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread = Thread(target=run_flask_server, kwargs={"host": host, "port": port}, daemon=True)
     flask_thread.start()
 
-    if not wait_for_server():
+    if not wait_for_server(host=host, port=port):
         raise RuntimeError(f"Flask server did not start on http://{host}:{port}")
 
     window = webview.create_window(
-        "Oscilloscope Analyzer",
+        APP_NAME,
         f"http://{host}:{port}",
-        width=1200,
-        height=800,
+        width=width,
+        height=height,
         js_api=desktop_api,
     )
     MAIN_WINDOW = window
@@ -1662,4 +1886,11 @@ if __name__ == "__main__":
 
     window.events.closed += on_window_closed
     webview.start()
-    
+
+
+if __name__ == "__main__":
+    mode = os.getenv("FNIRSI_APP_MODE", "desktop").lower()
+    if mode == "server":
+        run_flask_server()
+    else:
+        launch_desktop()

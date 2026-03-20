@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.signal import butter, filtfilt, medfilt
+from scipy.signal import butter, filtfilt, medfilt, savgol_filter
 
 
 WINDOW_FUNCTIONS = {
@@ -30,6 +30,88 @@ def _replace_nonfinite(signal):
     cleaned = signal.copy()
     cleaned[~finite_mask] = np.interp(indices[~finite_mask], indices[finite_mask], signal[finite_mask])
     return cleaned
+
+
+def _smooth_signal(signal, fs, mode="general"):
+    signal = _replace_nonfinite(signal)
+    signal = np.asarray(signal, dtype=float)
+    if signal.size < 7 or fs <= 0:
+        return signal
+
+    signal_type = detect_signal_type(signal)
+    if signal_type == "digital":
+        return medfilt(signal, kernel_size=3)
+
+    if mode == "derivative":
+        cutoff_ratio = 0.045
+        window_fraction = 0.045
+    elif mode == "frequency":
+        cutoff_ratio = 0.10
+        window_fraction = 0.02
+    elif mode == "correlation":
+        cutoff_ratio = 0.08
+        window_fraction = 0.025
+    else:
+        cutoff_ratio = 0.09
+        window_fraction = 0.02
+
+    filtered = butter_lowpass(signal, fs, cutoff_ratio=cutoff_ratio, order=3)
+    window_length = max(5, int(signal.size * window_fraction))
+    if window_length % 2 == 0:
+        window_length += 1
+    window_length = min(window_length, signal.size if signal.size % 2 == 1 else signal.size - 1)
+    if window_length >= 5:
+        try:
+            filtered = savgol_filter(filtered, window_length=window_length, polyorder=2, mode="interp")
+        except ValueError:
+            pass
+    return filtered
+
+
+def _savgol_first_derivative(signal, fs):
+    signal = _replace_nonfinite(signal)
+    signal = np.asarray(signal, dtype=float)
+    if signal.size < 7 or fs <= 0:
+        return np.gradient(signal, 1.0 / fs) if signal.size >= 2 else np.array([])
+
+    window_length = max(7, int(signal.size * 0.05))
+    if window_length % 2 == 0:
+        window_length += 1
+    window_length = min(window_length, signal.size if signal.size % 2 == 1 else signal.size - 1)
+
+    if window_length < 7:
+        return np.gradient(signal, 1.0 / fs)
+
+    try:
+        return savgol_filter(signal, window_length=window_length, polyorder=3, deriv=1, delta=1.0 / fs, mode="interp")
+    except ValueError:
+        return np.gradient(signal, 1.0 / fs)
+
+
+def _smooth_math_subtraction(result, ch1, ch2):
+    result = _replace_nonfinite(result)
+    result = np.asarray(result, dtype=float)
+    if result.size < 7:
+        return result
+
+    ref_amplitude = max(float(np.ptp(ch1)), float(np.ptp(ch2)), 1e-12)
+    result_amplitude = float(np.ptp(result))
+    relative_level = result_amplitude / ref_amplitude
+
+    window_fraction = 0.055 if relative_level < 0.25 else 0.035
+    window_length = max(5, int(result.size * window_fraction))
+    if window_length % 2 == 0:
+        window_length += 1
+    window_length = min(window_length, result.size if result.size % 2 == 1 else result.size - 1)
+    if window_length < 5:
+        return result
+
+    filtered = medfilt(result, kernel_size=3)
+    try:
+        filtered = savgol_filter(filtered, window_length=window_length, polyorder=2, mode="interp")
+    except ValueError:
+        pass
+    return filtered
 
 
 def get_scope_fs_and_time(ch1, config, screen_divisions=14):
@@ -168,7 +250,7 @@ def _extract_pulse_statistics(binary_signal, fs):
 
 
 def _estimate_frequency_hz(signal, fs):
-    signal = _replace_nonfinite(signal)
+    signal = _smooth_signal(signal, fs, mode="frequency")
     if signal.size < 4 or fs <= 0:
         return 0.0
 
@@ -191,8 +273,13 @@ def _estimate_frequency_from_fft(signal, fs):
         return 0.0
 
     window = np.hanning(sample_count)
-    spectrum = np.fft.rfft(signal * window)
-    frequencies_hz = np.fft.rfftfreq(sample_count, d=1 / fs)
+    fft_size = 1
+    target_size = max(sample_count * 8, 4096)
+    while fft_size < target_size:
+        fft_size <<= 1
+
+    spectrum = np.fft.rfft(signal * window, n=fft_size)
+    frequencies_hz = np.fft.rfftfreq(fft_size, d=1 / fs)
     magnitudes = np.abs(spectrum)
     if magnitudes.size < 2:
         return 0.0
@@ -284,9 +371,14 @@ def _find_top_fft_peaks(frequencies_hz, magnitudes, limit=5):
         indices = indices[np.argsort(magnitudes[indices])[::-1][:limit]]
 
     peaks = []
+    used_frequencies = []
     for index in indices:
-        freq_hz = float(frequencies_hz[index])
-        amplitude = float(magnitudes[index])
+        refined_index = _quadratic_peak_index(magnitudes, int(index))
+        bin_width_hz = frequencies_hz[1] - frequencies_hz[0] if frequencies_hz.size > 1 else 0.0
+        freq_hz = float(refined_index * bin_width_hz)
+        if any(abs(freq_hz - used_hz) <= max(bin_width_hz * 3, 1e-12) for used_hz in used_frequencies):
+            continue
+        amplitude = float(magnitudes[int(index)])
         scaled_freq, unit, _ = scale_frequency_value(freq_hz)
         peaks.append(
             {
@@ -296,6 +388,9 @@ def _find_top_fft_peaks(frequencies_hz, magnitudes, limit=5):
                 "magnitude": round(amplitude, 6),
             }
         )
+        used_frequencies.append(freq_hz)
+        if len(peaks) >= limit:
+            break
     return peaks
 
 
@@ -304,22 +399,26 @@ def _calculate_harmonics(frequencies_hz, magnitudes, dominant_frequency_hz, harm
     if dominant_frequency_hz <= 0 or frequencies_hz.size == 0 or magnitudes.size == 0:
         return harmonics
 
+    used_indices = set()
     for order in range(1, harmonic_count + 1):
         target_hz = dominant_frequency_hz * order
         if target_hz > frequencies_hz[-1]:
             break
 
-        bin_width_hz = frequencies_hz[1] - frequencies_hz[0] if frequencies_hz.size > 1 else target_hz
-        tolerance_hz = max(bin_width_hz * 2, target_hz * 0.03)
-        mask = np.abs(frequencies_hz - target_hz) <= tolerance_hz
-        candidate_indices = np.flatnonzero(mask)
-        if candidate_indices.size == 0:
-            index = int(np.argmin(np.abs(frequencies_hz - target_hz)))
-        else:
-            local_index = int(np.argmax(magnitudes[candidate_indices]))
-            index = int(candidate_indices[local_index])
+        center_index = int(np.argmin(np.abs(frequencies_hz - target_hz)))
+        search_radius = 2 if order == 1 else 3
+        left = max(0, center_index - search_radius)
+        right = min(magnitudes.size - 1, center_index + search_radius)
+        candidate_indices = np.arange(left, right + 1, dtype=int)
+        local_index = int(np.argmax(magnitudes[candidate_indices]))
+        index = int(candidate_indices[local_index])
+        if index in used_indices:
+            continue
+        used_indices.add(index)
 
-        harmonic_hz = float(frequencies_hz[index])
+        refined_index = _quadratic_peak_index(magnitudes, index)
+        bin_width_hz = frequencies_hz[1] - frequencies_hz[0] if frequencies_hz.size > 1 else 0.0
+        harmonic_hz = float(refined_index * bin_width_hz)
         harmonic_mag = float(magnitudes[index])
         scaled_freq, unit, _ = scale_frequency_value(harmonic_hz)
         harmonics.append(
@@ -342,12 +441,12 @@ def _calculate_thd_percent(harmonics):
     if fundamental <= 0:
         return 0.0
 
-    harmonic_energy = sum(harmonic["magnitude"] ** 2 for harmonic in harmonics[1:])
+    harmonic_energy = sum(harmonic["magnitude"] ** 2 for harmonic in harmonics[1:] if harmonic["magnitude"] <= fundamental * 1.5)
     return round(float(np.sqrt(harmonic_energy) / fundamental * 100), 4)
 
 
 def get_fft_spectrum(signal, fs, max_frequency=None, window_type="hann"):
-    signal = _replace_nonfinite(signal)
+    signal = _smooth_signal(signal, fs, mode="frequency")
 
     empty = {
         "frequencies_hz": np.array([]),
@@ -369,9 +468,16 @@ def get_fft_spectrum(signal, fs, max_frequency=None, window_type="hann"):
     window_key, window = _resolve_window(window_type, signal.size)
     windowed_signal = centered_signal * window
 
-    spectrum = np.fft.rfft(windowed_signal)
-    frequencies_hz = np.fft.rfftfreq(signal.size, d=1 / fs)
-    magnitudes = (2.0 / np.sum(window)) * np.abs(spectrum)
+    fft_size = 1
+    target_size = max(signal.size * 8, 4096)
+    while fft_size < target_size:
+        fft_size <<= 1
+
+    spectrum = np.fft.rfft(windowed_signal, n=fft_size)
+    frequencies_hz = np.fft.rfftfreq(fft_size, d=1 / fs)
+    coherent_gain = np.sum(window) / signal.size if signal.size else 1.0
+    coherent_gain = coherent_gain if coherent_gain > 0 else 1.0
+    magnitudes = (2.0 / (signal.size * coherent_gain)) * np.abs(spectrum)
 
     if frequencies_hz.size > 0:
         magnitudes[0] = 0.0
@@ -385,7 +491,9 @@ def get_fft_spectrum(signal, fs, max_frequency=None, window_type="hann"):
         return empty | {"window_type": window_key}
 
     dominant_index = int(np.argmax(magnitudes))
-    dominant_frequency_hz = float(frequencies_hz[dominant_index])
+    refined_index = _quadratic_peak_index(magnitudes, dominant_index)
+    bin_width_hz = frequencies_hz[1] - frequencies_hz[0] if frequencies_hz.size > 1 else 0.0
+    dominant_frequency_hz = float(refined_index * bin_width_hz)
     dominant_magnitude = float(magnitudes[dominant_index])
     dominant_frequency, dominant_unit, dominant_multiplier = scale_frequency_value(dominant_frequency_hz)
     top_peaks = _find_top_fft_peaks(frequencies_hz, magnitudes, limit=5)
@@ -445,7 +553,7 @@ def calculate_signal_statistics(signal):
 
 
 def calculate_cycle_analysis(signal, fs):
-    signal = _replace_nonfinite(signal)
+    signal = _smooth_signal(signal, fs, mode="general")
     empty = {
         "cycle_count": 0,
         "avg_frequency": 0.0,
@@ -508,7 +616,7 @@ def calculate_cycle_analysis(signal, fs):
 
 
 def calculate_advanced_measures(signal, fs):
-    signal = _replace_nonfinite(signal)
+    signal = _smooth_signal(signal, fs, mode="derivative")
     empty = {
         "rise_time": 0.0,
         "rise_time_unit": "s",
@@ -568,7 +676,7 @@ def calculate_advanced_measures(signal, fs):
 
 
 def calculate_derivative_integral(signal, fs):
-    signal = _replace_nonfinite(signal)
+    signal = _smooth_signal(signal, fs, mode="derivative")
     if signal.size < 2 or fs <= 0:
         return {
             "derivative": np.array([]),
@@ -579,6 +687,7 @@ def calculate_derivative_integral(signal, fs):
 
     dt = 1 / fs
     derivative = np.gradient(signal, dt)
+    derivative = _smooth_signal(derivative, fs, mode="derivative")
     trapezoids = (signal[1:] + signal[:-1]) * 0.5 * dt
     integral = np.concatenate(([0.0], np.cumsum(trapezoids)))
     return {
@@ -590,8 +699,8 @@ def calculate_derivative_integral(signal, fs):
 
 
 def calculate_correlation_analysis(ch1, ch2, fs):
-    ch1 = _replace_nonfinite(ch1)
-    ch2 = _replace_nonfinite(ch2)
+    ch1 = _smooth_signal(ch1, fs, mode="correlation")
+    ch2 = _smooth_signal(ch2, fs, mode="correlation")
 
     if ch1.size == 0 or ch2.size == 0 or fs <= 0:
         return {
@@ -625,6 +734,58 @@ def calculate_correlation_analysis(ch1, ch2, fs):
         "delay_seconds": delay_seconds,
         "delay_value": delay_value,
         "delay_unit": delay_unit,
+    }
+
+
+def calculate_current_analysis(signal, fs, method, component_value):
+    signal = _smooth_signal(signal, fs, mode="derivative" if (method or "").lower() == "capacitor" else "general")
+    method = (method or "resistor").lower()
+
+    empty = {
+        "current": np.array([]),
+        "method": method,
+        "component_value": float(component_value) if component_value else 0.0,
+        "current_mean": 0.0,
+        "current_rms": 0.0,
+        "current_max": 0.0,
+        "current_min": 0.0,
+        "current_peak_to_peak": 0.0,
+        "enabled": False,
+    }
+
+    if signal.size == 0 or fs <= 0 or component_value is None or component_value <= 0:
+        return empty
+
+    dt = 1.0 / fs
+    if method == "resistor":
+        current = signal / component_value
+    elif method == "capacitor":
+        current = component_value * _savgol_first_derivative(signal, fs)
+    elif method == "inductor":
+        signal_for_integral = signal - float(np.mean(signal))
+        trapezoids = (signal_for_integral[1:] + signal_for_integral[:-1]) * 0.5 * dt
+        current = np.concatenate(([0.0], np.cumsum(trapezoids))) / component_value
+        current = current - float(np.mean(current))
+    else:
+        return empty
+
+    current = _replace_nonfinite(current)
+    if method in {"capacitor", "inductor"}:
+        current = _smooth_signal(current, fs, mode="derivative")
+    finite_current = _finite_signal(current)
+    if finite_current.size == 0:
+        return empty
+
+    return {
+        "current": current,
+        "method": method,
+        "component_value": float(component_value),
+        "current_mean": round(float(np.mean(finite_current)), 6),
+        "current_rms": round(_safe_rms(finite_current), 6),
+        "current_max": round(float(np.max(finite_current)), 6),
+        "current_min": round(float(np.min(finite_current)), 6),
+        "current_peak_to_peak": round(float(np.ptp(finite_current)), 6),
+        "enabled": True,
     }
 
 
@@ -751,7 +912,7 @@ def apply_math_operation(ch1, ch2, operation):
     if operation == "add":
         return ch1 + ch2
     if operation == "sub":
-        return ch1 - ch2
+        return _smooth_math_subtraction(ch1 - ch2, ch1, ch2)
     if operation == "mul":
         return ch1 * ch2
     if operation == "div":
@@ -845,8 +1006,37 @@ def anti_aliasing_filter(signal, strength=5):
     """
     Filtro suavizado tipo moving average.
     """
-    kernel = np.ones(strength) / strength
-    return np.convolve(signal, kernel, mode="same")
+    signal = np.asarray(signal, dtype=float)
+    if signal.size == 0:
+        return signal
+
+    strength = max(1, int(strength))
+    if strength == 1:
+        return signal.copy()
+
+    kernel = np.ones(strength, dtype=float) / strength
+    pad_left = strength // 2
+    pad_right = strength - 1 - pad_left
+    padded = np.pad(signal, (pad_left, pad_right), mode="edge")
+    return np.convolve(padded, kernel, mode="valid")
+
+
+def _savgol_smooth(signal, window_fraction=0.03, polyorder=2):
+    signal = np.asarray(signal, dtype=float)
+    if signal.size < 7:
+        return signal
+
+    window_length = max(5, int(signal.size * window_fraction))
+    if window_length % 2 == 0:
+        window_length += 1
+    window_length = min(window_length, signal.size if signal.size % 2 == 1 else signal.size - 1)
+    if window_length <= polyorder:
+        return signal
+
+    try:
+        return savgol_filter(signal, window_length=window_length, polyorder=polyorder, mode="interp")
+    except ValueError:
+        return signal
 
 
 def detect_signal_type(signal, threshold=0.08):
@@ -878,16 +1068,20 @@ def adaptive_scope_filter(signal, fs):
 
     if signal_type == "digital":
         filtered = medfilt(signal, kernel_size=3)
-        if fs > 500:
-            filtered = butter_lowpass(filtered, fs, cutoff_ratio=0.45, order=1)
+        filtered = anti_aliasing_filter(filtered, strength=3)
+        signal_min = float(np.min(signal))
+        signal_max = float(np.max(signal))
+        filtered = np.clip(filtered, signal_min, signal_max)
         return filtered
 
     peak_to_peak = np.ptp(signal)
     if peak_to_peak > 0.5:
-        filtered = butter_lowpass(signal, fs, cutoff_ratio=0.10, order=3)
-        filtered = anti_aliasing_filter(filtered, strength=4)
+        filtered = butter_lowpass(signal, fs, cutoff_ratio=0.055, order=4)
+        filtered = anti_aliasing_filter(filtered, strength=7)
+        filtered = _savgol_smooth(filtered, window_fraction=0.04, polyorder=2)
     else:
-        filtered = butter_lowpass(signal, fs, cutoff_ratio=0.08, order=4)
-        filtered = anti_aliasing_filter(filtered, strength=5)
+        filtered = butter_lowpass(signal, fs, cutoff_ratio=0.045, order=4)
+        filtered = anti_aliasing_filter(filtered, strength=9)
+        filtered = _savgol_smooth(filtered, window_fraction=0.05, polyorder=2)
 
     return filtered

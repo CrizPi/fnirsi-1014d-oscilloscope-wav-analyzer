@@ -275,7 +275,7 @@ def get_scope_measures(file):
             time_plus_values.append(0.0)
             time_minus_values.append(0.0)
 
-            cycle_units[ch] = "Hz"
+            cycle_units[ch] = "S"
             cycle_multiplier[ch] = 1
             time_plus_units[ch] = "S"
             time_minus_units[ch] = "S"

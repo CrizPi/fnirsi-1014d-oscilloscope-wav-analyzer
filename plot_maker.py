@@ -16,6 +16,38 @@ XY_PLOT_BOTTOM = 0.16
 XY_PLOT_TOP = 0.90
 
 
+def _apply_aligned_axis_limits(ax, x_values, y_values, symmetric_y=False):
+    x_values = np.asarray(x_values if x_values is not None else [], dtype=float)
+    y_values = np.asarray(y_values if y_values is not None else [], dtype=float)
+    finite_x = x_values[np.isfinite(x_values)]
+    finite_y = y_values[np.isfinite(y_values)]
+
+    if finite_x.size > 1:
+        x_min = float(np.min(finite_x))
+        x_max = float(np.max(finite_x))
+        if x_max > x_min:
+            ax.set_xlim(x_min, x_max)
+            ax.set_xticks(np.linspace(x_min, x_max, 11))
+
+    if finite_y.size == 0:
+        return
+
+    if symmetric_y:
+        max_abs = float(np.max(np.abs(finite_y)))
+        max_abs = max(max_abs, 1e-9) * 1.12
+        ax.set_ylim(-max_abs, max_abs)
+        ax.set_yticks(np.linspace(-max_abs, max_abs, 9))
+        return
+
+    y_min = float(np.min(finite_y))
+    y_max = float(np.max(finite_y))
+    if y_max == y_min:
+        y_max = y_min + 1e-9
+    pad = (y_max - y_min) * 0.12
+    ax.set_ylim(y_min - pad, y_max + pad)
+    ax.set_yticks(np.linspace(y_min - pad, y_max + pad, 9))
+
+
 class Channel(Enum):
     CH1 = "X"
     CH2 = "Y"
@@ -510,6 +542,7 @@ def _generate_xy_plot(
 
     if x_values.size and y_values.size:
         ax.plot(x_values, y_values, color=line_color, linewidth=2.0)
+        _apply_aligned_axis_limits(ax, x_values, y_values, symmetric_y=(np.min(y_values) < 0 < np.max(y_values)))
         if marker_x is not None and marker_y is not None:
             ax.scatter([marker_x], [marker_y], color="#f2e30f" if bg_color == "#000000" else "#b3261e", s=50, zorder=3)
         for line_x in vertical_lines or []:
@@ -568,6 +601,85 @@ def generate_signal_analysis_grafic_file(t, signal, title, y_label):
         "No data available",
         150,
     )
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+        fig.savefig(tmp_file.name, format="png", bbox_inches="tight", facecolor=fig.get_facecolor(), dpi=150)
+        temp_path = tmp_file.name
+    plt.close(fig)
+    return temp_path
+
+
+def _generate_voltage_current_plot(t, voltage, current, title, dpi, is_light=False):
+    time_axis = np.asarray(t if t is not None else [], dtype=float)
+    voltage = np.asarray(voltage if voltage is not None else [], dtype=float)
+    current = np.asarray(current if current is not None else [], dtype=float)
+
+    if is_light:
+        bg_color = "#FFFFFF"
+        grid_major = "#C0C0C0"
+        grid_minor = "#E6E6E6"
+        tick_color = "#000000"
+        voltage_color = "#0b57d0"
+        current_color = "#b3261e"
+    else:
+        bg_color = "#000000"
+        grid_major = "#919191"
+        grid_minor = "#2B2B2B"
+        tick_color = "#919191"
+        voltage_color = "#00e5ff"
+        current_color = "#ff8c42"
+
+    fig, ax1 = plt.subplots(figsize=(16, 6), dpi=dpi)
+    ax2 = ax1.twinx()
+    fig.patch.set_facecolor(bg_color)
+    ax1.set_facecolor(bg_color)
+    ax2.set_facecolor(bg_color)
+
+    for axis in (ax1, ax2):
+        axis.grid(True, which="major", color=grid_major, linewidth=0.6)
+        axis.minorticks_on()
+        axis.grid(True, which="minor", color=grid_minor, linewidth=0.4)
+        axis.tick_params(colors=tick_color)
+        for spine in axis.spines.values():
+            spine.set_color(tick_color)
+            spine.set_linewidth(1.0)
+
+    if time_axis.size and voltage.size and current.size:
+        length = min(time_axis.size, voltage.size, current.size)
+        ax1.plot(time_axis[:length], voltage[:length], color=voltage_color, linewidth=2.0, label="Voltage")
+        ax2.plot(time_axis[:length], current[:length], color=current_color, linewidth=2.0, label="Current")
+        _apply_aligned_axis_limits(ax1, time_axis[:length], voltage[:length], symmetric_y=True)
+        _apply_aligned_axis_limits(ax2, time_axis[:length], current[:length], symmetric_y=True)
+    else:
+        ax1.text(0.5, 0.5, "No current data available", color=tick_color, fontsize=18, ha="center", va="center", transform=ax1.transAxes)
+
+    ax1.set_xlabel("Time (s)", color=tick_color)
+    ax1.set_ylabel("Voltage (V)", color=voltage_color)
+    ax2.set_ylabel("Current (A)", color=current_color)
+    ax1.tick_params(axis="y", colors=voltage_color)
+    ax2.tick_params(axis="y", colors=current_color)
+    plt.title(title, color=tick_color)
+
+    voltage_line = plt.Line2D([], [], color=voltage_color, linewidth=2.0, label="Voltage")
+    current_line = plt.Line2D([], [], color=current_color, linewidth=2.0, label="Current")
+    legend = ax1.legend(handles=[voltage_line, current_line], loc="upper right")
+    plt.setp(legend.get_texts(), color=tick_color)
+    legend.get_frame().set_facecolor(bg_color)
+    legend.get_frame().set_edgecolor(tick_color)
+    return fig
+
+
+def generate_voltage_current_grafic(t, voltage, current, title):
+    fig = _generate_voltage_current_plot(t, voltage, current, title, 120, is_light=False)
+    buffer = BytesIO()
+    fig.savefig(buffer, format="png", bbox_inches="tight", facecolor=fig.get_facecolor(), dpi=120)
+    buffer.seek(0)
+    image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    plt.close(fig)
+    return image_base64
+
+
+def generate_voltage_current_grafic_file(t, voltage, current, title):
+    fig = _generate_voltage_current_plot(t, voltage, current, title, 150, is_light=True)
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
         fig.savefig(tmp_file.name, format="png", bbox_inches="tight", facecolor=fig.get_facecolor(), dpi=150)
         temp_path = tmp_file.name

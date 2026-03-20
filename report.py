@@ -3,6 +3,7 @@ from plot_maker import (
     generate_fft_grafic_file,
     generate_grafic_file,
     generate_signal_analysis_grafic_file,
+    generate_voltage_current_grafic_file,
 )
 
 
@@ -52,6 +53,10 @@ def generate_signal_analysis_download(t, signal, title, y_label):
 
 def generate_correlation_grafic_download(lags_seconds, correlation, title, marker_x=None, marker_y=None):
     return generate_correlation_grafic_file(lags_seconds, correlation, title, marker_x=marker_x, marker_y=marker_y)
+
+
+def generate_current_grafic_download(t, voltage, current, title):
+    return generate_voltage_current_grafic_file(t, voltage, current, title)
 
 
 def generate_latex_table(rows, caption="Tabla", headers=("X", "Y")):
@@ -287,3 +292,27 @@ def generate_comparison_latex(comparison_data):
     ]
     return generate_latex_table(rows, caption="Snapshot Comparison", headers=("Value", ""))
 
+
+def generate_current_latex(current_data):
+    method_labels = {
+        "resistor": "Resistor (i(t)=v(t)/R)",
+        "capacitor": "Capacitor (i(t)=C dv(t)/dt)",
+        "inductor": "Inductor (i(t)=(1/L) integral v(t) dt)",
+    }
+    unit_labels = {
+        "resistor": "ohm",
+        "capacitor": "F",
+        "inductor": "H",
+    }
+    method = current_data.get("method", "resistor")
+    rows = [
+        ("Channel", current_data.get("channel", "X"), ""),
+        ("Method", method_labels.get(method, method), ""),
+        ("Component value", f"{current_data.get('component_value', 0)} {unit_labels.get(method, '')}", ""),
+        ("Mean current", f"{current_data.get('current_mean', 0)} A", ""),
+        ("RMS current", f"{current_data.get('current_rms', 0)} A", ""),
+        ("Max current", f"{current_data.get('current_max', 0)} A", ""),
+        ("Min current", f"{current_data.get('current_min', 0)} A", ""),
+        ("Peak-to-peak current", f"{current_data.get('current_peak_to_peak', 0)} A", ""),
+    ]
+    return generate_latex_table(rows, caption="Calculated Current Analysis", headers=("Value", ""))
