@@ -30,6 +30,7 @@ from report import (
     generate_correlation_latex,
     generate_current_grafic_download,
     generate_current_latex,
+    generate_transfer_latex,
     generate_total_current_latex,
     generate_cursor_latex,
     generate_cycle_latex,
@@ -54,7 +55,9 @@ from signal_analyzer import (
     calculate_derivative_integral,
     calculate_manual_measurement,
     calculate_math_measures,
+    calculate_power_analysis,
     calculate_signal_statistics,
+    calculate_transfer_analysis,
     calculate_voltage_current_phase_angle,
     convert_scope_data,
     crop_scope_window,
@@ -154,6 +157,10 @@ DEFAULT_TOTAL_CURRENT_SETTINGS = {
     "combination_mode": "parallel",
     "frequency_tolerance_percent": "5",
 }
+DEFAULT_TRANSFER_SETTINGS = {
+    "input_channel": "X",
+    "output_channel": "Y",
+}
 DEFAULT_CALIBRATION_SETTINGS = {
     "x_gain": 1.0,
     "y_gain": 1.0,
@@ -181,6 +188,7 @@ AJAX_MODULE_ACTIONS = {
     "advanced",
     "calculus",
     "current",
+    "transfer",
     "correlation",
     "calibration",
     "cursor",
@@ -286,8 +294,7 @@ def clear_current_waveforms():
 
 def clear_loaded_state(preserve_current_library=False):
     cleanup_file()
-    if not preserve_current_library:
-        clear_current_waveforms()
+    clear_current_waveforms()
     keys = (
         "file_wav",
         "original_name",
@@ -307,6 +314,9 @@ def clear_loaded_state(preserve_current_library=False):
         "current_enabled",
         "current_settings",
         "current_data",
+        "transfer_enabled",
+        "transfer_settings",
+        "transfer_data",
         "correlation_enabled",
         "correlation_data",
         "calibration_settings",
@@ -324,9 +334,8 @@ def clear_loaded_state(preserve_current_library=False):
     )
     for key in keys:
         session.pop(key, None)
-    if not preserve_current_library:
-        for key in ("current_snapshots", "total_current_enabled", "total_current_settings", "total_current_data"):
-            session.pop(key, None)
+    for key in ("current_snapshots", "total_current_enabled", "total_current_settings", "total_current_data"):
+        session.pop(key, None)
 
 
 def get_unique_filename():
@@ -507,6 +516,14 @@ def get_total_current_settings():
         "voltage_channel": settings.get("voltage_channel", "X"),
         "combination_mode": settings.get("combination_mode", "parallel"),
         "frequency_tolerance_percent": str(settings.get("frequency_tolerance_percent", "5")),
+    }
+
+
+def get_transfer_settings():
+    settings = session.get("transfer_settings", DEFAULT_TRANSFER_SETTINGS.copy())
+    return {
+        "input_channel": settings.get("input_channel", "X"),
+        "output_channel": settings.get("output_channel", "Y"),
     }
 
 
@@ -753,6 +770,13 @@ def build_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
         "current_min": 0.0,
         "current_peak_to_peak": 0.0,
         "phase_angle_deg": 0.0,
+        "voltage_rms": 0.0,
+        "apparent_power_va": 0.0,
+        "active_power_w": 0.0,
+        "reactive_power_var": 0.0,
+        "power_factor": 0.0,
+        "complex_power_real_w": 0.0,
+        "complex_power_imag_var": 0.0,
         "detected_frequency_hz": 0.0,
         "inductor_initial_mode": settings["inductor_initial_mode"],
         "inductor_initial_value": 0.0,
@@ -817,6 +841,7 @@ def build_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
     current_data["source_time_axis"] = np.asarray(time_axis, dtype=float)
     phase_data = calculate_voltage_current_phase_angle(selected_signal, current_data.get("current", []), fs)
     current_data["phase_angle_deg"] = phase_data.get("phase_angle_deg", 0.0)
+    current_data.update(calculate_power_analysis(selected_signal, current_data.get("current", []), fs))
     if not phase_data.get("enabled"):
         warnings = list(current_data.get("warnings", []))
         warning_message = "No se pudo estimar el desfase entre voltaje y corriente con suficiente confianza."
@@ -897,15 +922,38 @@ def save_current_snapshot(snapshot_name, current_data, time_axis, file_name):
 
 def _resample_current_to_reference(reference_time_axis, reference_frequency_hz, reference_voltage_template, sample):
     reference_time_axis = np.asarray(reference_time_axis, dtype=float)
-    template = np.asarray(sample.get("template", []), dtype=float)
     if reference_time_axis.size == 0:
         return np.zeros_like(reference_time_axis)
+
+    sample_time = np.asarray(sample.get("time_axis", []), dtype=float)
+    sample_current = np.asarray(sample.get("current", []), dtype=float)
+    if sample_time.size > 0 and sample_current.size > 0:
+        length = min(sample_time.size, sample_current.size)
+        sample_time = sample_time[:length]
+        sample_current = sample_current[:length]
+        return np.interp(reference_time_axis, sample_time, sample_current, left=0.0, right=0.0)
+
+    template = np.asarray(sample.get("template", []), dtype=float)
     if template.size > 0 and reference_frequency_hz > 0:
         aligned_template = template
         sample_voltage_template = np.asarray(sample.get("voltage_template", []), dtype=float)
         if reference_voltage_template.size > 0 and sample_voltage_template.size > 0:
-            shift_fraction = estimate_template_phase_shift(reference_voltage_template, sample_voltage_template)
+            shift_fraction = _estimate_template_shift_fraction(reference_voltage_template, sample_voltage_template)
             aligned_template = shift_cycle_template(aligned_template, shift_fraction)
+        return project_cycle_template(aligned_template, reference_time_axis, reference_frequency_hz)
+
+    return np.zeros_like(reference_time_axis)
+
+
+def _resample_current_series_to_reference(reference_time_axis, reference_frequency_hz, reference_current_template, sample):
+    reference_time_axis = np.asarray(reference_time_axis, dtype=float)
+    template = np.asarray(sample.get("template", []), dtype=float)
+    if reference_time_axis.size == 0:
+        return np.zeros_like(reference_time_axis)
+
+    if template.size > 0 and reference_frequency_hz > 0 and np.asarray(reference_current_template).size > 0:
+        shift_fraction = _estimate_template_shift_fraction(reference_current_template, template)
+        aligned_template = shift_cycle_template(template, shift_fraction)
         return project_cycle_template(aligned_template, reference_time_axis, reference_frequency_hz)
 
     sample_time = np.asarray(sample.get("time_axis", []), dtype=float)
@@ -920,14 +968,31 @@ def _resample_current_to_reference(reference_time_axis, reference_frequency_hz, 
     return np.interp(reference_relative, sample_relative, sample_current, left=0.0, right=0.0)
 
 
+def _estimate_template_shift_fraction(reference_template, sample_template):
+    reference_template = np.asarray(reference_template if reference_template is not None else [], dtype=float)
+    sample_template = np.asarray(sample_template if sample_template is not None else [], dtype=float)
+    length = min(reference_template.size, sample_template.size)
+    if length < 8:
+        return 0.0
+
+    reference_template = reference_template[:length]
+    sample_template = sample_template[:length]
+    phase_data = calculate_voltage_current_phase_angle(reference_template, sample_template, float(length))
+    if phase_data.get("enabled"):
+        phase_shift_deg = float(phase_data.get("phase_angle_deg", 0.0))
+        return float(((-phase_shift_deg) / 360.0) % 1.0)
+    return estimate_template_phase_shift(reference_template, sample_template)
+
+
 def build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
     settings = get_total_current_settings()
+    current_file_snapshots = [item for item in session.get("current_snapshots", []) if item.get("file_name") == file_name]
     empty = {
         "enabled": False,
         "voltage_channel": settings["voltage_channel"],
-        "combination_mode": settings["combination_mode"],
+        "combination_mode": "parallel",
         "frequency_tolerance_percent": settings["frequency_tolerance_percent"],
-        "saved_count": len(session.get("current_snapshots", [])),
+        "saved_count": len(current_file_snapshots),
         "compatible_count": 0,
         "incompatible_count": 0,
         "total_current_mean": 0.0,
@@ -936,6 +1001,13 @@ def build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
         "total_current_min": 0.0,
         "total_current_peak_to_peak": 0.0,
         "phase_angle_deg": 0.0,
+        "voltage_rms": 0.0,
+        "apparent_power_va": 0.0,
+        "active_power_w": 0.0,
+        "reactive_power_var": 0.0,
+        "power_factor": 0.0,
+        "complex_power_real_w": 0.0,
+        "complex_power_imag_var": 0.0,
         "series_mismatch_rms": 0.0,
         "warnings": [],
         "graph": generate_voltage_current_grafic([], [], [], "Total Current Analysis"),
@@ -943,7 +1015,7 @@ def build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
     if not session.get("total_current_enabled"):
         return empty
 
-    saved_metadata = session.get("current_snapshots", [])
+    saved_metadata = current_file_snapshots
     if not saved_metadata:
         return empty
 
@@ -968,7 +1040,7 @@ def build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
         tolerance_percent = 5.0
 
     warnings = []
-    aligned_currents = []
+    compatible_samples = []
     incompatible_count = 0
     for item in saved_metadata:
         sample = _cache_get(CURRENT_WAVEFORM_STORE, item["id"])
@@ -983,34 +1055,31 @@ def build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
                     f"Se omitio '{item.get('name', 'snapshot')}' por incompatibilidad de frecuencia ({sample_frequency_hz:.4f} Hz vs {reference_frequency_hz:.4f} Hz)."
                 )
                 continue
-        aligned_currents.append(
-            _resample_current_to_reference(reference_time_axis, reference_frequency_hz, reference_voltage_template, sample)
-        )
+        compatible_samples.append(sample)
 
-    used_count = len(aligned_currents)
+    used_count = len(compatible_samples)
 
     if used_count == 0:
         empty["incompatible_count"] = incompatible_count
         empty["warnings"] = warnings or ["No hay corrientes compatibles para combinar con la referencia actual."]
         return empty
 
+    aligned_currents = []
+    combination_mode = "parallel"
+    for sample in compatible_samples:
+        aligned_currents.append(
+            _resample_current_to_reference(reference_time_axis, reference_frequency_hz, reference_voltage_template, sample)
+        )
     stacked_currents = np.vstack(aligned_currents)
-    combination_mode = settings.get("combination_mode", "parallel")
-    if combination_mode == "series":
-        total_current = np.mean(stacked_currents, axis=0)
-        mismatch = np.sqrt(np.mean((stacked_currents - total_current) ** 2, axis=1))
-        series_mismatch_rms = round(float(np.max(mismatch)), 6) if mismatch.size else 0.0
-        if series_mismatch_rms > max(float(np.sqrt(np.mean(total_current ** 2))) * 0.1, 1e-9):
-            warnings.append("Las corrientes en modo serie no coinciden bien entre si; revise polaridad, fase y compatibilidad fisica.")
-    else:
-        total_current = np.sum(stacked_currents, axis=0)
-        series_mismatch_rms = 0.0
+    total_current = np.sum(stacked_currents, axis=0)
+    series_mismatch_rms = 0.0
 
     finite_current = total_current[np.isfinite(total_current)]
     if finite_current.size == 0:
         return empty
 
     phase_data = calculate_voltage_current_phase_angle(voltage, total_current, fs)
+    power_data = calculate_power_analysis(voltage, total_current, fs)
     graph_key = (
         "total_current_graph",
         session.get("file_wav"),
@@ -1045,6 +1114,13 @@ def build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
         "total_current_min": round(float(np.min(finite_current)), 6),
         "total_current_peak_to_peak": round(float(np.ptp(finite_current)), 6),
         "phase_angle_deg": phase_data.get("phase_angle_deg", 0.0),
+        "voltage_rms": power_data.get("voltage_rms", 0.0),
+        "apparent_power_va": power_data.get("apparent_power_va", 0.0),
+        "active_power_w": power_data.get("active_power_w", 0.0),
+        "reactive_power_var": power_data.get("reactive_power_var", 0.0),
+        "power_factor": power_data.get("power_factor", 0.0),
+        "complex_power_real_w": power_data.get("complex_power_real_w", 0.0),
+        "complex_power_imag_var": power_data.get("complex_power_imag_var", 0.0),
         "series_mismatch_rms": series_mismatch_rms,
         "warnings": warnings,
         "graph": graph,
@@ -1084,6 +1160,62 @@ def build_correlation_view(ch1, ch2, fs, file_name):
         )
         _cache_set(GRAPH_CACHE, graph_key, correlation_data["graph"])
     return _cache_set(ANALYSIS_CACHE, cache_key, correlation_data)
+
+
+def build_transfer_view(ch1, ch2, math_result, fs, time_axis, file_name):
+    settings = get_transfer_settings()
+    empty = {
+        "input_channel": settings["input_channel"],
+        "output_channel": settings["output_channel"],
+        "vin_rms": 0.0,
+        "vout_rms": 0.0,
+        "vin_vpp": 0.0,
+        "vout_vpp": 0.0,
+        "gain_rms": 0.0,
+        "gain_vpp": 0.0,
+        "gain_db": 0.0,
+        "phase_angle_deg": 0.0,
+        "frequency_hz": 0.0,
+        "delay_value": 0.0,
+        "delay_unit": "s",
+        "delay_seconds": 0.0,
+        "correlation_peak": 0.0,
+        "graph": generate_grafic([], [], [], "Transfer Analysis", show_empty=True),
+        "enabled": False,
+    }
+    if not session.get("transfer_enabled"):
+        return empty
+
+    signals = {
+        "X": ch1,
+        "Y": ch2,
+        "MATH": math_result if math_result is not None else np.array([]),
+    }
+    vin = np.asarray(signals.get(settings["input_channel"], ch1), dtype=float)
+    vout = np.asarray(signals.get(settings["output_channel"], ch2), dtype=float)
+    cache_key = (
+        "transfer",
+        session.get("file_wav"),
+        settings["input_channel"],
+        settings["output_channel"],
+        _freeze_value(get_calibration_settings()),
+        session.get("math_operation"),
+    )
+    cached = _cache_get(ANALYSIS_CACHE, cache_key)
+    if cached is not None:
+        return cached
+
+    transfer_data = calculate_transfer_analysis(vin, vout, fs)
+    transfer_data["input_channel"] = settings["input_channel"]
+    transfer_data["output_channel"] = settings["output_channel"]
+    transfer_data["graph"] = generate_grafic(
+        time_axis,
+        vin,
+        vout,
+        f"Transfer Analysis {settings['input_channel']} vs {settings['output_channel']}",
+        show_empty=True,
+    )
+    return _cache_set(ANALYSIS_CACHE, cache_key, transfer_data)
 
 
 def build_cursor_view(ch1, ch2, math_result, time_axis):
@@ -1332,12 +1464,38 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "current_min": 0.0,
             "current_peak_to_peak": 0.0,
             "phase_angle_deg": 0.0,
+            "voltage_rms": 0.0,
+            "apparent_power_va": 0.0,
+            "active_power_w": 0.0,
+            "reactive_power_var": 0.0,
+            "power_factor": 0.0,
+            "complex_power_real_w": 0.0,
+            "complex_power_imag_var": 0.0,
             "detected_frequency_hz": 0.0,
             "inductor_initial_mode": "zero",
             "inductor_initial_value_input": "0",
             "warnings": [],
             "current": np.array([]),
             "graph": generate_voltage_current_grafic([], [], [], "Current Analysis"),
+            "enabled": False,
+        },
+        "transfer_data": {
+            "input_channel": "X",
+            "output_channel": "Y",
+            "vin_rms": 0.0,
+            "vout_rms": 0.0,
+            "vin_vpp": 0.0,
+            "vout_vpp": 0.0,
+            "gain_rms": 0.0,
+            "gain_vpp": 0.0,
+            "gain_db": 0.0,
+            "phase_angle_deg": 0.0,
+            "frequency_hz": 0.0,
+            "delay_value": 0.0,
+            "delay_unit": "s",
+            "delay_seconds": 0.0,
+            "correlation_peak": 0.0,
+            "graph": generate_grafic([], [], [], "Transfer Analysis", show_empty=True),
             "enabled": False,
         },
         "total_current_data": {
@@ -1354,6 +1512,13 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "total_current_min": 0.0,
             "total_current_peak_to_peak": 0.0,
             "phase_angle_deg": 0.0,
+            "voltage_rms": 0.0,
+            "apparent_power_va": 0.0,
+            "active_power_w": 0.0,
+            "reactive_power_var": 0.0,
+            "power_factor": 0.0,
+            "complex_power_real_w": 0.0,
+            "complex_power_imag_var": 0.0,
             "series_mismatch_rms": 0.0,
             "warnings": [],
             "graph": generate_voltage_current_grafic([], [], [], "Total Current Analysis"),
@@ -1450,6 +1615,7 @@ def build_ajax_fragment_response(rendered_html, action_name, error_message=None)
         "advanced": "module-advanced",
         "calculus": "module-calculus",
         "current": "module-current",
+        "transfer": "module-transfer",
         "correlation": "module-correlation",
         "calibration": "module-calibration",
         "cursor": "module-cursor",
@@ -1560,6 +1726,13 @@ def prepare_analysis_context(action_name=None):
                 "current_min": current_data.get("current_min", 0.0),
                 "current_peak_to_peak": current_data.get("current_peak_to_peak", 0.0),
                 "phase_angle_deg": current_data.get("phase_angle_deg", 0.0),
+                "voltage_rms": current_data.get("voltage_rms", 0.0),
+                "apparent_power_va": current_data.get("apparent_power_va", 0.0),
+                "active_power_w": current_data.get("active_power_w", 0.0),
+                "reactive_power_var": current_data.get("reactive_power_var", 0.0),
+                "power_factor": current_data.get("power_factor", 0.0),
+                "complex_power_real_w": current_data.get("complex_power_real_w", 0.0),
+                "complex_power_imag_var": current_data.get("complex_power_imag_var", 0.0),
                 "detected_frequency_hz": current_data.get("detected_frequency_hz", 0.0),
                 "inductor_initial_mode": current_data.get("inductor_initial_mode", get_current_settings()["inductor_initial_mode"]),
                 "inductor_initial_value_input": current_data.get("inductor_initial_value_input", get_current_settings()["inductor_initial_value"]),
@@ -1567,6 +1740,8 @@ def prepare_analysis_context(action_name=None):
                 "graph": current_graph,
                 "enabled": bool(session.get("current_enabled")),
             }
+
+    transfer_data = build_transfer_view(ch1, ch2, math_result, fs, time_axis, file_name)
 
     total_current_data = build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name)
 
@@ -1619,6 +1794,7 @@ def prepare_analysis_context(action_name=None):
         "advanced_data": advanced_data,
         "calculus_data": calculus_data,
         "current_data": current_data,
+        "transfer_data": transfer_data,
         "total_current_data": total_current_data,
         "correlation_data": correlation_data,
         "cursor_data": cursor_data,
@@ -1655,11 +1831,36 @@ def store_enabled_views(context):
             "current_min": context["current_data"]["current_min"],
             "current_peak_to_peak": context["current_data"]["current_peak_to_peak"],
             "phase_angle_deg": context["current_data"].get("phase_angle_deg", 0.0),
+            "voltage_rms": context["current_data"].get("voltage_rms", 0.0),
+            "apparent_power_va": context["current_data"].get("apparent_power_va", 0.0),
+            "active_power_w": context["current_data"].get("active_power_w", 0.0),
+            "reactive_power_var": context["current_data"].get("reactive_power_var", 0.0),
+            "power_factor": context["current_data"].get("power_factor", 0.0),
+            "complex_power_real_w": context["current_data"].get("complex_power_real_w", 0.0),
+            "complex_power_imag_var": context["current_data"].get("complex_power_imag_var", 0.0),
             "detected_frequency_hz": context["current_data"].get("detected_frequency_hz", 0.0),
             "inductor_initial_mode": context["current_data"].get("inductor_initial_mode", "zero"),
             "inductor_initial_value": context["current_data"].get("initial_current_value", 0.0),
             "inductor_initial_value_input": context["current_data"].get("inductor_initial_value_input", "0"),
             "warnings": context["current_data"].get("warnings", []),
+        }
+    if context["transfer_data"]["enabled"]:
+        session["transfer_data"] = {
+            "input_channel": context["transfer_data"]["input_channel"],
+            "output_channel": context["transfer_data"]["output_channel"],
+            "vin_rms": context["transfer_data"].get("vin_rms", 0.0),
+            "vout_rms": context["transfer_data"].get("vout_rms", 0.0),
+            "vin_vpp": context["transfer_data"].get("vin_vpp", 0.0),
+            "vout_vpp": context["transfer_data"].get("vout_vpp", 0.0),
+            "gain_rms": context["transfer_data"].get("gain_rms", 0.0),
+            "gain_vpp": context["transfer_data"].get("gain_vpp", 0.0),
+            "gain_db": context["transfer_data"].get("gain_db", 0.0),
+            "phase_angle_deg": context["transfer_data"].get("phase_angle_deg", 0.0),
+            "frequency_hz": context["transfer_data"].get("frequency_hz", 0.0),
+            "delay_value": context["transfer_data"].get("delay_value", 0.0),
+            "delay_unit": context["transfer_data"].get("delay_unit", "s"),
+            "delay_seconds": context["transfer_data"].get("delay_seconds", 0.0),
+            "correlation_peak": context["transfer_data"].get("correlation_peak", 0.0),
         }
     if context["total_current_data"]["enabled"]:
         session["total_current_data"] = {
@@ -1675,6 +1876,13 @@ def store_enabled_views(context):
             "total_current_min": context["total_current_data"]["total_current_min"],
             "total_current_peak_to_peak": context["total_current_data"]["total_current_peak_to_peak"],
             "phase_angle_deg": context["total_current_data"]["phase_angle_deg"],
+            "voltage_rms": context["total_current_data"].get("voltage_rms", 0.0),
+            "apparent_power_va": context["total_current_data"].get("apparent_power_va", 0.0),
+            "active_power_w": context["total_current_data"].get("active_power_w", 0.0),
+            "reactive_power_var": context["total_current_data"].get("reactive_power_var", 0.0),
+            "power_factor": context["total_current_data"].get("power_factor", 0.0),
+            "complex_power_real_w": context["total_current_data"].get("complex_power_real_w", 0.0),
+            "complex_power_imag_var": context["total_current_data"].get("complex_power_imag_var", 0.0),
             "series_mismatch_rms": context["total_current_data"].get("series_mismatch_rms", 0.0),
             "warnings": context["total_current_data"].get("warnings", []),
         }
@@ -1722,7 +1930,7 @@ def main():
             if not is_allowed_file(uploaded_file.filename):
                 return render_template("main.html", **build_empty_view("Solo se permiten archivos .wav."))
 
-            clear_loaded_state(preserve_current_library=True)
+            clear_loaded_state()
             file_path = os.path.join(UPLOAD_FOLDER, get_unique_filename())
             uploaded_file.save(file_path)
 
@@ -1747,8 +1955,10 @@ def main():
                     "calculus_settings": DEFAULT_CALCULUS_SETTINGS.copy(),
                     "current_enabled": False,
                     "current_settings": DEFAULT_CURRENT_SETTINGS.copy(),
-                    "total_current_enabled": bool(session.get("current_snapshots")),
-                    "total_current_settings": session.get("total_current_settings", DEFAULT_TOTAL_CURRENT_SETTINGS.copy()),
+                    "transfer_enabled": False,
+                    "transfer_settings": DEFAULT_TRANSFER_SETTINGS.copy(),
+                    "total_current_enabled": False,
+                    "total_current_settings": DEFAULT_TOTAL_CURRENT_SETTINGS.copy(),
                     "correlation_enabled": False,
                     "calibration_enabled": False,
                     "calibration_settings": DEFAULT_CALIBRATION_SETTINGS.copy(),
@@ -1843,6 +2053,19 @@ def main():
         pending_current_snapshot_name = (request.form.get("current_snapshot_name") or "").strip() or "Current snapshot"
         toast_variant = "success"
 
+    if request.method == "POST" and "transfer_apply" in request.form:
+        action_name = "transfer"
+        session["transfer_enabled"] = True
+        session["transfer_settings"] = {
+            "input_channel": request.form.get("transfer_input_channel", "X"),
+            "output_channel": request.form.get("transfer_output_channel", "Y"),
+        }
+        toast_message = (
+            f"Transfer analysis applied: {session['transfer_settings']['input_channel']} -> "
+            f"{session['transfer_settings']['output_channel']}"
+        )
+        toast_variant = "success"
+
     if request.method == "POST" and "total_current_apply" in request.form:
         action_name = "current"
         try:
@@ -1856,7 +2079,7 @@ def main():
         else:
             session["total_current_settings"] = {
                 "voltage_channel": request.form.get("total_current_voltage_channel", "X"),
-                "combination_mode": request.form.get("total_current_combination_mode", "parallel"),
+                "combination_mode": "parallel",
                 "frequency_tolerance_percent": tolerance_normalized or "5",
             }
             session["total_current_enabled"] = True
@@ -1990,6 +2213,7 @@ def main():
         advanced_data=context["advanced_data"],
         calculus_data=context["calculus_data"],
         current_data=context["current_data"],
+        transfer_data=context["transfer_data"],
         total_current_data=context["total_current_data"],
         correlation_data=context["correlation_data"],
         calibration_data=context["calibration_data"],
@@ -1997,7 +2221,7 @@ def main():
         cycle_data=context["cycle_data"],
         comparison_data=context["comparison_data"],
         snapshots=session.get("snapshots", []),
-        current_snapshots=session.get("current_snapshots", []),
+        current_snapshots=[item for item in session.get("current_snapshots", []) if item.get("file_name") == context["file_name"]],
         error_message=error_message,
         toast_message=toast_message,
         toast_variant=toast_variant,
@@ -2070,6 +2294,14 @@ def download_current_latex():
     if not current_data:
         return "No hay analisis de corriente", 400
     return Response(generate_current_latex(current_data), mimetype="text/plain")
+
+
+@app.route("/download_transfer_latex")
+def download_transfer_latex():
+    transfer_data = session.get("transfer_data")
+    if not transfer_data:
+        return "No hay analisis de transferencia", 400
+    return Response(generate_transfer_latex(transfer_data), mimetype="text/plain")
 
 
 @app.route("/download_total_current_latex")

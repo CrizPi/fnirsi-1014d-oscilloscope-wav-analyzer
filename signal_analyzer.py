@@ -983,6 +983,129 @@ def calculate_voltage_current_phase_angle(voltage, current, fs):
     }
 
 
+def calculate_power_analysis(voltage, current, fs):
+    voltage = _replace_nonfinite(voltage)
+    current = _replace_nonfinite(current)
+    voltage = np.asarray(voltage, dtype=float)
+    current = np.asarray(current, dtype=float)
+
+    length = min(voltage.size, current.size)
+    empty = {
+        "voltage_rms": 0.0,
+        "current_rms": 0.0,
+        "apparent_power_va": 0.0,
+        "active_power_w": 0.0,
+        "reactive_power_var": 0.0,
+        "power_factor": 0.0,
+        "complex_power_real_w": 0.0,
+        "complex_power_imag_var": 0.0,
+        "enabled": False,
+    }
+    if length < 2 or fs <= 0:
+        return empty
+
+    voltage = voltage[:length]
+    current = current[:length]
+    finite_voltage = _finite_signal(voltage)
+    finite_current = _finite_signal(current)
+    if finite_voltage.size == 0 or finite_current.size == 0:
+        return empty
+
+    voltage_rms = _safe_rms(finite_voltage)
+    current_rms = _safe_rms(finite_current)
+    apparent_power = voltage_rms * current_rms
+
+    phase_data = calculate_voltage_current_phase_angle(voltage, current, fs)
+    phase_angle_deg = float(phase_data.get("phase_angle_deg", 0.0))
+    phase_angle_rad = float(np.radians(phase_angle_deg))
+
+    active_power = apparent_power * float(np.cos(phase_angle_rad))
+    reactive_power = apparent_power * float(np.sin(phase_angle_rad))
+    power_factor = active_power / apparent_power if apparent_power > 1e-12 else 0.0
+
+    return {
+        "voltage_rms": round(float(voltage_rms), 6),
+        "current_rms": round(float(current_rms), 6),
+        "apparent_power_va": round(float(apparent_power), 6),
+        "active_power_w": round(float(active_power), 6),
+        "reactive_power_var": round(float(reactive_power), 6),
+        "power_factor": round(float(power_factor), 6),
+        "complex_power_real_w": round(float(active_power), 6),
+        "complex_power_imag_var": round(float(reactive_power), 6),
+        "enabled": True,
+    }
+
+
+def calculate_transfer_analysis(input_signal, output_signal, fs):
+    input_signal = _replace_nonfinite(input_signal)
+    output_signal = _replace_nonfinite(output_signal)
+    input_signal = np.asarray(input_signal, dtype=float)
+    output_signal = np.asarray(output_signal, dtype=float)
+
+    length = min(input_signal.size, output_signal.size)
+    empty = {
+        "vin_rms": 0.0,
+        "vout_rms": 0.0,
+        "vin_vpp": 0.0,
+        "vout_vpp": 0.0,
+        "gain_rms": 0.0,
+        "gain_vpp": 0.0,
+        "gain_db": 0.0,
+        "phase_angle_deg": 0.0,
+        "frequency_hz": 0.0,
+        "delay_value": 0.0,
+        "delay_unit": "s",
+        "delay_seconds": 0.0,
+        "correlation_peak": 0.0,
+        "enabled": False,
+    }
+    if length < 8 or fs <= 0:
+        return empty
+
+    input_signal = input_signal[:length]
+    output_signal = output_signal[:length]
+    finite_in = _finite_signal(input_signal)
+    finite_out = _finite_signal(output_signal)
+    if finite_in.size == 0 or finite_out.size == 0:
+        return empty
+
+    vin_rms = _safe_rms(finite_in)
+    vout_rms = _safe_rms(finite_out)
+    vin_vpp = float(np.ptp(finite_in))
+    vout_vpp = float(np.ptp(finite_out))
+    gain_rms = vout_rms / vin_rms if vin_rms > 1e-12 else 0.0
+    gain_vpp = vout_vpp / vin_vpp if vin_vpp > 1e-12 else 0.0
+    gain_db = 20.0 * float(np.log10(gain_rms)) if gain_rms > 1e-12 else 0.0
+
+    phase_data = calculate_voltage_current_phase_angle(input_signal, output_signal, fs)
+    phase_angle_deg = float(phase_data.get("phase_angle_deg", 0.0))
+    frequency_hz = float(phase_data.get("dominant_frequency_hz", 0.0))
+
+    if frequency_hz <= 0:
+        frequency_hz = float(_estimate_frequency_hz(input_signal, fs))
+
+    delay_seconds = phase_angle_deg / 360.0 / frequency_hz if frequency_hz > 1e-12 else 0.0
+    delay_value, delay_unit = _scale_time_value(abs(delay_seconds))
+    correlation_data = calculate_correlation_analysis(input_signal, output_signal, fs)
+
+    return {
+        "vin_rms": round(float(vin_rms), 6),
+        "vout_rms": round(float(vout_rms), 6),
+        "vin_vpp": round(float(vin_vpp), 6),
+        "vout_vpp": round(float(vout_vpp), 6),
+        "gain_rms": round(float(gain_rms), 6),
+        "gain_vpp": round(float(gain_vpp), 6),
+        "gain_db": round(float(gain_db), 6),
+        "phase_angle_deg": round(float(phase_angle_deg), 4),
+        "frequency_hz": round(float(frequency_hz), 6),
+        "delay_value": delay_value,
+        "delay_unit": delay_unit,
+        "delay_seconds": round(float(delay_seconds), 9),
+        "correlation_peak": round(float(correlation_data.get("max_correlation", 0.0)), 6),
+        "enabled": True,
+    }
+
+
 def build_cycle_template(signal, time_axis, fs, samples_per_cycle=512):
     signal = _replace_nonfinite(signal)
     time_axis = np.asarray(time_axis, dtype=float)

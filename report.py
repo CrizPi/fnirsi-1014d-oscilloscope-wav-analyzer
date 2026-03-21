@@ -310,14 +310,39 @@ def generate_current_latex(current_data):
         ("Method", method_labels.get(method, method), ""),
         ("Component value", f"{current_data.get('component_value', 0)} {unit_labels.get(method, '')}", ""),
         ("Initial condition", current_data.get("inductor_initial_mode", "zero"), ""),
+        ("RMS voltage", f"{current_data.get('voltage_rms', 0)} V", ""),
         ("Mean current", f"{current_data.get('current_mean', 0)} A", ""),
         ("RMS current", f"{current_data.get('current_rms', 0)} A", ""),
         ("Max current", f"{current_data.get('current_max', 0)} A", ""),
         ("Min current", f"{current_data.get('current_min', 0)} A", ""),
         ("Peak-to-peak current", f"{current_data.get('current_peak_to_peak', 0)} A", ""),
         ("Phase angle", f"{current_data.get('phase_angle_deg', 0)} deg", ""),
+        ("Apparent power", f"{current_data.get('apparent_power_va', 0)} VA", ""),
+        ("Active power", f"{current_data.get('active_power_w', 0)} W", ""),
+        ("Reactive power", f"{current_data.get('reactive_power_var', 0)} VAR", ""),
+        ("Complex power", f"{current_data.get('complex_power_real_w', 0)} + j{current_data.get('complex_power_imag_var', 0)} VA", ""),
+        ("Power factor", f"{current_data.get('power_factor', 0)}", ""),
     ]
     return generate_latex_table(rows, caption="Calculated Current Analysis", headers=("Value", ""))
+
+
+def generate_transfer_latex(transfer_data):
+    rows = [
+        ("Input channel", transfer_data.get("input_channel", "X"), ""),
+        ("Output channel", transfer_data.get("output_channel", "Y"), ""),
+        ("Vin RMS", f"{transfer_data.get('vin_rms', 0)} V", ""),
+        ("Vout RMS", f"{transfer_data.get('vout_rms', 0)} V", ""),
+        ("Vin Vpp", f"{transfer_data.get('vin_vpp', 0)} V", ""),
+        ("Vout Vpp", f"{transfer_data.get('vout_vpp', 0)} V", ""),
+        ("Vout/Vin RMS", f"{transfer_data.get('gain_rms', 0)}", ""),
+        ("Vout/Vin Vpp", f"{transfer_data.get('gain_vpp', 0)}", ""),
+        ("Gain", f"{transfer_data.get('gain_db', 0)} dB", ""),
+        ("Phase angle", f"{transfer_data.get('phase_angle_deg', 0)} deg", ""),
+        ("Delay", f"{transfer_data.get('delay_value', 0)} {transfer_data.get('delay_unit', 's')}", ""),
+        ("Frequency", f"{transfer_data.get('frequency_hz', 0)} Hz", ""),
+        ("Correlation peak", f"{transfer_data.get('correlation_peak', 0)}", ""),
+    ]
+    return generate_latex_table(rows, caption="Transfer Analysis", headers=("Value", ""))
 
 
 def generate_total_current_latex(total_current_data):
@@ -327,12 +352,18 @@ def generate_total_current_latex(total_current_data):
         ("Frequency tolerance", f"{total_current_data.get('frequency_tolerance_percent', 5)} %", ""),
         ("Saved currents", total_current_data.get("saved_count", 0), ""),
         ("Rejected currents", total_current_data.get("incompatible_count", 0), ""),
+        ("RMS voltage", f"{total_current_data.get('voltage_rms', 0)} V", ""),
         ("Mean total current", f"{total_current_data.get('total_current_mean', 0)} A", ""),
         ("RMS total current", f"{total_current_data.get('total_current_rms', 0)} A", ""),
         ("Max total current", f"{total_current_data.get('total_current_max', 0)} A", ""),
         ("Min total current", f"{total_current_data.get('total_current_min', 0)} A", ""),
         ("Peak-to-peak total current", f"{total_current_data.get('total_current_peak_to_peak', 0)} A", ""),
         ("Phase angle", f"{total_current_data.get('phase_angle_deg', 0)} deg", ""),
+        ("Apparent power", f"{total_current_data.get('apparent_power_va', 0)} VA", ""),
+        ("Active power", f"{total_current_data.get('active_power_w', 0)} W", ""),
+        ("Reactive power", f"{total_current_data.get('reactive_power_var', 0)} VAR", ""),
+        ("Complex power", f"{total_current_data.get('complex_power_real_w', 0)} + j{total_current_data.get('complex_power_imag_var', 0)} VA", ""),
+        ("Power factor", f"{total_current_data.get('power_factor', 0)}", ""),
         ("Series mismatch RMS", f"{total_current_data.get('series_mismatch_rms', 0)} A", ""),
     ]
     return generate_latex_table(rows, caption="Total Current Analysis", headers=("Value", ""))

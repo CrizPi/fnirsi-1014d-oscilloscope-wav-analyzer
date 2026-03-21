@@ -1,98 +1,247 @@
-# FNIRSI 1014D Analyzer Installer Variant
+# FNIRSI 1014D Analyzer
 
-This folder is a separate copy of the main project prepared for desktop distribution on Windows.
+Desktop analyzer for `.wav` captures exported by the FNIRSI 1014D oscilloscope.
 
-The original project remains unchanged in:
+The app parses the oscilloscope file format, reconstructs the visible waveforms, and provides signal analysis modules for voltage, current, transfer behavior, correlation, FFT, cursors, and report export.
 
-```text
-C:\Users\rance\OneDrive\Desktop\osciloscope_fnirsi_1014d_analizer
-```
+## Current Scope
 
-This copy is focused on producing:
+This project currently includes:
 
-- a standalone desktop `.exe`
-- a Windows installer package
+- desktop UI built with Flask + `pywebview`
+- parsing of FNIRSI header, measures, trigger metadata, and waveform blocks
+- waveform reconstruction aligned to the oscilloscope screen behavior
+- main graph with oscilloscope-like horizontal scaling using `time/div`
+- MATH operations on filtered voltage signals
+- FFT analysis
+- statistics and advanced signal measures
+- derivative and integral analysis
+- current estimation for resistor, capacitor, and inductor models
+- total current summation for saved current calculations from the current file
+- AC power calculation for individual current and total current
+- transfer analysis between `Vin` and `Vout`
+- channel correlation
+- manual cursors
+- cycle analysis
+- LaTeX export for most analysis sections
+- PNG export for the main plot and analysis plots that generate images
 
-## What Changed in This Variant
-
-Compared with the original project, this installer-oriented copy includes:
-
-- a dedicated desktop launcher in [`desktop.py`](C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer_installer/desktop.py)
-- a cleaner desktop startup flow in [`app.py`](C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer_installer/app.py)
-- user data stored under `%LOCALAPPDATA%\FNIRSI1014DAnalyzer`
-- an updated PyInstaller spec in [`app.spec`](C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer_installer/app.spec)
-- an Inno Setup script in [`installer.iss`](C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer_installer/installer.iss)
-
-## Runtime Behavior
-
-The application still uses:
-
-- Flask as the local backend
-- `pywebview` as the desktop window
-- Matplotlib, NumPy, and SciPy for analysis and plotting
-
-However, temporary uploads are now intended to live in a user-scoped application data folder instead of depending on the project directory.
-
-## Files of Interest
+## Project Structure
 
 ```text
 .
-|-- app.py              # Backend + reusable desktop launch helpers
-|-- desktop.py          # Dedicated desktop entry point for packaging
-|-- app.spec            # PyInstaller build spec for the desktop exe
-|-- installer.iss       # Inno Setup script for the Windows installer
+|-- app.py               # Main Flask app, desktop launcher, routing, session state
+|-- desktop.py           # Minimal desktop entry point
+|-- file_analizer.py     # FNIRSI .wav parsing and metadata extraction
+|-- signal_analyzer.py   # Signal processing, measures, current, power, transfer analysis
+|-- plot_maker.py        # Matplotlib plot generation
+|-- report.py            # LaTeX report/export helpers
 |-- templates/
+|   `-- main.html        # Main UI
 |-- static/
-|-- signal_analyzer.py
-|-- plot_maker.py
-|-- file_analizer.py
-|-- report.py
-`-- requirements.txt
+|   `-- style.css        # UI styles
+|-- requirements.txt
+|-- app.spec             # PyInstaller spec
+|-- installer.iss        # Inno Setup script
+`-- iniciar.bat          # Local setup helper
 ```
 
-## Build the Desktop Executable
+## Supported Analysis Modules
 
-Run these commands from this folder:
+### 1. Oscilloscope data view
+
+- `X` and `Y` waveform display
+- oscilloscope configuration table
+- oscilloscope measurements table
+- PNG export of the main graph
+
+### 2. MATH
+
+- `X + Y`
+- `X - Y`
+- `X * Y`
+- `X / Y`
+
+### 3. FFT
+
+- channel selection: `X`, `Y`, or `MATH`
+- linear/log magnitude scaling
+- selectable window
+- dominant frequency
+- harmonic summary
+- THD estimate
+
+### 4. Statistics and advanced signal measures
+
+- mean, variance, standard deviation, RMS, peak-to-peak
+- rise time, fall time, overshoot, undershoot, slew rate, crest factor
+
+### 5. Derivative and integral
+
+- derivative and integral of `X`, `Y`, or `MATH`
+
+### 6. Current analysis
+
+- resistor model: `i(t) = v(t) / R`
+- capacitor model: `i(t) = C dv(t) / dt`
+- inductor model: `i(t) = (1/L) integral(v) dt`
+- current waveform graph
+- RMS, mean, peak, phase
+- AC power:
+  - apparent power `S`
+  - active power `P`
+  - reactive power `Q`
+  - complex power `P + jQ`
+  - power factor
+
+### 7. Total current
+
+- sum of saved current calculations from the current file
+- alignment against a selected voltage reference
+- total current graph
+- total AC power against selected voltage
+
+### 8. Transfer analysis
+
+- choose `Vin` and `Vout` from `X`, `Y`, or `MATH`
+- phase shift between input and output
+- `Vout/Vin` ratio using RMS
+- `Vout/Vin` ratio using peak-to-peak
+- gain in dB
+- equivalent delay
+- correlation peak
+- comparison graph
+
+### 9. Correlation
+
+- cross-correlation between `X` and `Y`
+- delay estimate
+
+### 10. Cursors and cycle analysis
+
+- two manual time cursors with draggable overlay
+- cycle count, average frequency, average period, average Vpp, average RMS
+
+## Oscilloscope File Handling
+
+The parser currently reads:
+
+- channel voltage scale
+- probe factor
+- coupling
+- `time/div`
+- trigger type
+- trigger edge
+- trigger channel
+- trigger 50%
+- oscilloscope measurements
+- visible waveform data and full waveform blocks
+
+The current display pipeline is tuned to match the waveform as shown on the oscilloscope screen:
+
+- visible waveform data is converted to volts using the oscilloscope measures
+- trigger metadata is used to locate the visible window
+- the displayed window is cropped symmetrically around the detected trigger reference
+- the time axis is rebuilt using the oscilloscope `time/div`
+
+## Run the Project
+
+### Option 1: Desktop mode
 
 ```powershell
-cd C:\Users\rance\OneDrive\Desktop\osciloscope_fnirsi_1014d_analizer_installer
-.\venv\Scripts\activate
-python -m pip install --upgrade pip
+python app.py
+```
+
+By default the project runs in desktop mode and opens a `pywebview` window.
+
+You can also use:
+
+```powershell
+python desktop.py
+```
+
+### Option 2: Server mode
+
+```powershell
+$env:FNIRSI_APP_MODE="server"
+python app.py
+```
+
+This starts only the Flask server.
+
+## Install Dependencies
+
+```powershell
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+Or use:
+
+```powershell
+iniciar.bat
+```
+
+## Packaging
+
+Desktop packaging files are already included:
+
+- [`app.spec`](/C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer/app.spec) for PyInstaller
+- [`installer.iss`](/C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer/installer.iss) for Inno Setup
+
+Typical build flow:
+
+```powershell
 pip install pyinstaller
 pyinstaller --clean --noconfirm app.spec
 ```
 
-Expected output:
+## Known Limitations
 
-```text
-dist\FNIRSI1014DAnalyzer.exe
-```
+- the project depends heavily on session state inside `app.py`; the app works, but the codebase is not yet strongly modularized
+- there is no automated test suite yet
+- some analysis modules still recompute data inside the request cycle instead of using a cleaner service layer
+- desktop and web concerns still live together in `app.py`
+- the environment in this workspace may contain an invalid or stale virtual environment path depending on the local machine setup
 
-## Run the Desktop Executable
+## Recommended Improvement Areas
 
-```powershell
-.\dist\FNIRSI1014DAnalyzer.exe
-```
+Highest-value next steps:
 
-## Build the Windows Installer
+1. Split `app.py` into smaller modules:
+   - routes
+   - state/session helpers
+   - analysis orchestration
+   - desktop launcher
 
-After generating the `.exe`, open [`installer.iss`](C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer_installer/installer.iss) with Inno Setup and compile it.
+2. Add automated tests for:
+   - `.wav` parsing
+   - trigger/window reconstruction
+   - `raw -> volts` conversion
+   - current and power analysis
+   - transfer analysis
 
-Expected installer output:
+3. Separate display signals from analysis signals more explicitly:
+   - display path for oscilloscope-like visualization
+   - analysis path for measurements sensitive to filtering or differentiation
 
-```text
-installer_output\FNIRSI1014DAnalyzerSetup.exe
-```
+4. Replace session-heavy state with a clearer internal model for:
+   - loaded file state
+   - active modules
+   - cached graph/analysis artifacts
 
-## Notes
+5. Add validation fixtures:
+   - real FNIRSI capture files
+   - expected waveform screenshots
+   - reference values for phase, gain, current, and power
 
-- This variant is intended specifically for Windows desktop distribution.
-- It is still based on the same mathematical and visualization core as the original project.
-- If you want an even cleaner separation, the next step would be splitting the backend into an app factory and keeping `desktop.py` as the only desktop entry point.
+6. Improve report/export coverage:
+   - add graph download for transfer analysis
+   - optionally generate a full multi-section report document
 
 ## License
 
 This project is released under the MIT License.
 
-See the [`LICENSE`](C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer_installer/LICENSE) file for details.
+See [`LICENSE`](/C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer/LICENSE).

@@ -645,13 +645,15 @@ def _generate_voltage_current_plot(t, voltage, current, title, dpi, is_light=Fal
         tick_color = "#000000"
         voltage_color = "#0b57d0"
         current_color = "#b3261e"
+        border_color = "#000000"
     else:
         bg_color = "#000000"
         grid_major = "#919191"
         grid_minor = "#2B2B2B"
         tick_color = "#919191"
-        voltage_color = "#00e5ff"
-        current_color = "#ff8c42"
+        voltage_color = "#ffff00"
+        current_color = "#00e5ff"
+        border_color = "#919191"
 
     fig, ax1 = plt.subplots(figsize=(16, 6), dpi=dpi)
     ax2 = ax1.twinx()
@@ -670,8 +672,8 @@ def _generate_voltage_current_plot(t, voltage, current, title, dpi, is_light=Fal
 
     if time_axis.size and voltage.size and current.size:
         length = min(time_axis.size, voltage.size, current.size)
-        ax1.plot(time_axis[:length], voltage[:length], color=voltage_color, linewidth=2.0, label="Voltage")
-        ax2.plot(time_axis[:length], current[:length], color=current_color, linewidth=2.0, label="Current")
+        ax1.plot(time_axis[:length], voltage[:length], color=voltage_color, linewidth=2.0, label="V")
+        ax2.plot(time_axis[:length], current[:length], color=current_color, linewidth=2.0, label="I")
         _apply_aligned_axis_limits(ax1, time_axis[:length], voltage[:length], symmetric_y=True)
         _apply_aligned_axis_limits(ax2, time_axis[:length], current[:length], symmetric_y=True)
     else:
@@ -681,18 +683,27 @@ def _generate_voltage_current_plot(t, voltage, current, title, dpi, is_light=Fal
     ax1.axvline(0, color=tick_color, linewidth=2.0)
 
     ax1.set_xlabel("Time (s)", color=tick_color)
-    ax1.set_ylabel("Voltage (V)", color=voltage_color)
-    ax2.set_ylabel("Current (A)", color=current_color)
-    ax1.tick_params(axis="y", colors=voltage_color)
-    ax2.tick_params(axis="y", colors=current_color)
+    ax1.set_ylabel("V", color=voltage_color if is_light else tick_color)
+    ax2.set_ylabel("I", color=current_color if is_light else tick_color)
+    ax1.tick_params(axis="y", colors=voltage_color if is_light else tick_color)
+    ax2.tick_params(axis="y", colors=current_color if is_light else tick_color)
     plt.title(title, color=tick_color)
 
-    voltage_line = plt.Line2D([], [], color=voltage_color, linewidth=2.0, label="Voltage")
-    current_line = plt.Line2D([], [], color=current_color, linewidth=2.0, label="Current")
-    legend = ax1.legend(handles=[voltage_line, current_line], loc="upper right")
+    voltage_line = plt.Line2D([], [], color=voltage_color, linewidth=2.0, label="V")
+    current_line = plt.Line2D([], [], color=current_color, linewidth=2.0, label="I")
+    legend = ax1.legend(
+        handles=[voltage_line, current_line],
+        loc="upper right",
+        bbox_to_anchor=(1.0, 1.0),
+        ncol=2,
+        frameon=True,
+        handlelength=2.6,
+        handletextpad=0.6,
+        columnspacing=1.8,
+    )
     plt.setp(legend.get_texts(), color=tick_color)
     legend.get_frame().set_facecolor(bg_color)
-    legend.get_frame().set_edgecolor(tick_color)
+    legend.get_frame().set_edgecolor(border_color)
     return fig
 
 
