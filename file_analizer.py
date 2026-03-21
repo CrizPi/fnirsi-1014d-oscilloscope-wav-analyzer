@@ -91,6 +91,10 @@ def get_scope_config(file):
     config["time_div"] = t[0]
     config["time_units"] = t[1]
     config["time_multiplier"] = t[2]
+    config["trigger_type"] = _safe_lookup(["auto", "single", "normal"], header[26], "tipo de trigger")
+    config["trigger_edge"] = _safe_lookup(["rising", "falling"], header[28], "flanco de trigger")
+    config["trigger_channel"] = _safe_lookup(["CH1", "CH2"], header[30], "canal de trigger")
+    config["trigger_50"] = _safe_lookup(["Off", "On"], header[124], "trigger 50%")
 
     return config
 

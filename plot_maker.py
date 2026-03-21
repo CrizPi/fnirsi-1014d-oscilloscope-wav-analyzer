@@ -125,6 +125,17 @@ class OscilloscopePlotter:
 
         return time_axis, ""
 
+    def _get_configured_time_axis(self, time_axis: np.ndarray, scope_config) -> Tuple[np.ndarray, str, float]:
+        if time_axis.size == 0:
+            return time_axis, "", 1.0
+        if not scope_config:
+            time_scaled, prefix = self._get_time_scale(time_axis)
+            return time_scaled, f"{prefix}s", 1.0
+
+        unit = str(scope_config.get("time_units", "S"))
+        multiplier = float(scope_config.get("time_multiplier", 1.0) or 1.0)
+        return time_axis / multiplier, unit, multiplier
+
     def _setup_axes_style(self, ax, ax2=None, is_light=False):
         if is_light:
             bg_color = "#FFFFFF"
@@ -160,12 +171,22 @@ class OscilloscopePlotter:
 
         return tick_color
 
-    def _setup_time_ticks(self, ax, time_scaled: np.ndarray):
-        if time_scaled.size > 1:
-            time_min, time_max = self._safe_range(np.min(time_scaled), np.max(time_scaled))
-            ax.set_xticks(np.linspace(time_min, time_max, 19))
+    def _setup_time_ticks(self, ax, time_scaled: np.ndarray, scope_config=None):
+        if time_scaled.size <= 1:
+            return
 
-    def _setup_voltage_ticks(self, ax, ax2, ch1: np.ndarray, ch2: np.ndarray, math_result: np.ndarray, is_math_only: bool):
+        if scope_config:
+            time_div = float(scope_config.get("time_div", 0) or 0)
+            if time_div > 0:
+                ticks = np.arange(-7, 8, dtype=float) * time_div
+                ax.set_xticks(ticks)
+                ax.set_xlim(ticks[0], ticks[-1])
+                return
+
+        time_min, time_max = self._safe_range(np.min(time_scaled), np.max(time_scaled))
+        ax.set_xticks(np.linspace(time_min, time_max, 19))
+
+    def _setup_voltage_ticks(self, ax, ax2, ch1: np.ndarray, ch2: np.ndarray, math_result: np.ndarray, is_math_only: bool, scope_config=None):
         divisions = self.config.divisions
 
         if is_math_only:
@@ -181,9 +202,9 @@ class OscilloscopePlotter:
         max2 = np.max(np.abs(ch2)) if not self._is_empty_signal(ch2) else 1
         max1 = self._safe_max(max1) * 1.2
         max2 = self._safe_max(max2) * 1.2
-
         step1 = self._safe_max(max1 / (divisions / 2))
         step2 = self._safe_max(max2 / (divisions / 2))
+
         ticks1 = np.arange(-divisions / 2, divisions / 2 + 1) * step1
         ticks2 = np.arange(-divisions / 2, divisions / 2 + 1) * step2
 
@@ -277,6 +298,7 @@ class OscilloscopePlotter:
         ch1: Optional[Union[list, np.ndarray]],
         ch2: Optional[Union[list, np.ndarray]],
         file_name: str,
+        scope_config=None,
         math_result: Optional[Union[list, np.ndarray]] = None,
         show_empty: bool = False,
         is_light: bool = False,
@@ -287,7 +309,7 @@ class OscilloscopePlotter:
         math_data = self._normalize_array(math_result)
 
         is_math_only = math_data.size > 0 and self._is_empty_signal(ch1_data) and self._is_empty_signal(ch2_data)
-        time_scaled, time_prefix = self._get_time_scale(time_axis)
+        time_scaled, time_unit_label, _ = self._get_configured_time_axis(time_axis, scope_config)
 
         fig, ax = plt.subplots(figsize=self.config.figsize)
         ax2 = None if is_math_only else ax.twinx()
@@ -296,7 +318,7 @@ class OscilloscopePlotter:
         background_color = "#FFFFFF" if is_light else self.config.bg_color
         border_color = "#000000" if is_light else self.config.spine_color
 
-        ax.set_xlabel(f"Time ({time_prefix}s)", color=tick_color)
+        ax.set_xlabel(f"Time ({time_unit_label})", color=tick_color)
         if is_math_only:
             ax.set_ylabel("Math Result (V)", color=channel_colors[Channel.MATH])
         else:
@@ -304,8 +326,8 @@ class OscilloscopePlotter:
             if ax2 is not None:
                 ax2.set_ylabel("Voltage Y (V)", color=channel_colors[Channel.CH2] if is_light else tick_color)
 
-        self._setup_time_ticks(ax, time_scaled)
-        self._setup_voltage_ticks(ax, ax2, ch1_data, ch2_data, math_data, is_math_only)
+        self._setup_time_ticks(ax, time_scaled, scope_config=scope_config)
+        self._setup_voltage_ticks(ax, ax2, ch1_data, ch2_data, math_data, is_math_only, scope_config=scope_config)
         self._draw_center_lines(ax, "#000000" if is_light else self.config.center_line_color)
         show_ch1, show_ch2 = self._plot_channels(
             ax, ax2, time_scaled, ch1_data, ch2_data, math_data, show_empty, is_math_only, channel_colors
@@ -333,10 +355,11 @@ class OscilloscopePlotter:
         ch1: Optional[Union[list, np.ndarray]],
         ch2: Optional[Union[list, np.ndarray]],
         file_name: str,
+        scope_config=None,
         math_result: Optional[Union[list, np.ndarray]] = None,
         show_empty: bool = False,
     ) -> str:
-        fig = self.create_figure(t, ch1, ch2, file_name, math_result=math_result, show_empty=show_empty)
+        fig = self.create_figure(t, ch1, ch2, file_name, scope_config=scope_config, math_result=math_result, show_empty=show_empty)
         buffer = BytesIO()
         fig.savefig(buffer, format="png", bbox_inches="tight", facecolor=fig.get_facecolor(), dpi=self.config.dpi)
         buffer.seek(0)
@@ -350,6 +373,7 @@ class OscilloscopePlotter:
         ch1: Optional[Union[list, np.ndarray]],
         ch2: Optional[Union[list, np.ndarray]],
         file_name: str,
+        scope_config=None,
         math_result: Optional[Union[list, np.ndarray]] = None,
         show_empty: bool = False,
     ) -> str:
@@ -358,6 +382,7 @@ class OscilloscopePlotter:
             ch1,
             ch2,
             file_name,
+            scope_config=scope_config,
             math_result=math_result,
             show_empty=show_empty,
             is_light=True,
@@ -369,14 +394,14 @@ class OscilloscopePlotter:
         return temp_path
 
 
-def generate_grafic(t, ch1, ch2, file_name, measures=None, math_result=None, show_empty=False):
+def generate_grafic(t, ch1, ch2, file_name, measures=None, scope_config=None, math_result=None, show_empty=False):
     plotter = OscilloscopePlotter()
-    return plotter.generate_plot_base64(t, ch1, ch2, file_name, math_result=math_result, show_empty=show_empty)
+    return plotter.generate_plot_base64(t, ch1, ch2, file_name, scope_config=scope_config, math_result=math_result, show_empty=show_empty)
 
 
-def generate_grafic_file(t, ch1, ch2, file_name, measures=None, math_result=None, show_empty=False):
+def generate_grafic_file(t, ch1, ch2, file_name, measures=None, scope_config=None, math_result=None, show_empty=False):
     plotter = OscilloscopePlotter()
-    return plotter.generate_plot_file(t, ch1, ch2, file_name, math_result=math_result, show_empty=show_empty)
+    return plotter.generate_plot_file(t, ch1, ch2, file_name, scope_config=scope_config, math_result=math_result, show_empty=show_empty)
 
 
 def generate_fft_grafic(
@@ -651,6 +676,9 @@ def _generate_voltage_current_plot(t, voltage, current, title, dpi, is_light=Fal
         _apply_aligned_axis_limits(ax2, time_axis[:length], current[:length], symmetric_y=True)
     else:
         ax1.text(0.5, 0.5, "No current data available", color=tick_color, fontsize=18, ha="center", va="center", transform=ax1.transAxes)
+
+    ax1.axhline(0, color=tick_color, linewidth=2.0)
+    ax1.axvline(0, color=tick_color, linewidth=2.0)
 
     ax1.set_xlabel("Time (s)", color=tick_color)
     ax1.set_ylabel("Voltage (V)", color=voltage_color)

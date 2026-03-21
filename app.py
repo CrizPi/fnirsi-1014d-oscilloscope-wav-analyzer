@@ -57,10 +57,13 @@ from signal_analyzer import (
     calculate_signal_statistics,
     calculate_voltage_current_phase_angle,
     convert_scope_data,
+    crop_scope_window,
     estimate_frequency_hz,
+    estimate_template_phase_shift,
     get_fft_spectrum,
     get_scope_fs_and_time,
     project_cycle_template,
+    shift_cycle_template,
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -87,6 +90,10 @@ DEFAULT_CONFIG = {
     "time_div": 0,
     "time_units": "S",
     "time_multiplier": 1,
+    "trigger_type": "auto",
+    "trigger_edge": "rising",
+    "trigger_channel": "CH1",
+    "trigger_50": "Off",
 }
 DEFAULT_MEASURES = {
     "Vmax": [0, 0],
@@ -135,8 +142,18 @@ DEFAULT_FFT_SETTINGS = {
     "window_type": "hann",
 }
 DEFAULT_CALCULUS_SETTINGS = {"channel": "X"}
-DEFAULT_CURRENT_SETTINGS = {"channel": "X", "method": "resistor", "component_value": "1"}
-DEFAULT_TOTAL_CURRENT_SETTINGS = {"voltage_channel": "X"}
+DEFAULT_CURRENT_SETTINGS = {
+    "channel": "X",
+    "method": "resistor",
+    "component_value": "1",
+    "inductor_initial_mode": "zero",
+    "inductor_initial_value": "0",
+}
+DEFAULT_TOTAL_CURRENT_SETTINGS = {
+    "voltage_channel": "X",
+    "combination_mode": "parallel",
+    "frequency_tolerance_percent": "5",
+}
 DEFAULT_CALIBRATION_SETTINGS = {
     "x_gain": 1.0,
     "y_gain": 1.0,
@@ -333,7 +350,8 @@ def load_signal_data(file_path, config, measures):
 
     ch1, ch2 = get_scope_raw_data_display(file_path, measures)
     ch1_v, ch2_v = convert_scope_data(ch1, ch2, config, measures)
-    fs, time_axis = get_scope_fs_and_time(ch1, config)
+    ch1_v, ch2_v, trigger_index = crop_scope_window(ch1_v, ch2_v, config)
+    fs, time_axis = get_scope_fs_and_time(ch1_v, config, ch2_v, trigger_index=trigger_index)
     return _cache_set(ANALYSIS_CACHE, cache_key, (ch1_v, ch2_v, fs, time_axis))
 
 
@@ -380,7 +398,7 @@ def get_main_graph(time_axis, ch1, ch2, file_name, measures, file_path):
     cached = _cache_get(GRAPH_CACHE, cache_key)
     if cached is not None:
         return cached
-    graph = generate_grafic(time_axis, ch1, ch2, "Oscilloscope Signals", measures)
+    graph = generate_grafic(time_axis, ch1, ch2, "Oscilloscope Signals", measures, scope_config=session.get("config", DEFAULT_CONFIG))
     return _cache_set(GRAPH_CACHE, cache_key, graph)
 
 
@@ -432,12 +450,15 @@ def get_correlation_graph_key():
 
 
 def get_current_graph_key(selected_channel, method, component_value):
+    current_settings = get_current_settings()
     return (
         "current_graph",
         session.get("file_wav"),
         selected_channel,
         method,
         component_value,
+        current_settings.get("inductor_initial_mode", "zero"),
+        current_settings.get("inductor_initial_value", "0"),
         _freeze_value(get_calibration_settings()),
         session.get("math_operation"),
     )
@@ -475,6 +496,8 @@ def get_current_settings():
         "channel": settings.get("channel", "X"),
         "method": settings.get("method", "resistor"),
         "component_value": str(settings.get("component_value", "1")),
+        "inductor_initial_mode": settings.get("inductor_initial_mode", "zero"),
+        "inductor_initial_value": str(settings.get("inductor_initial_value", "0")),
     }
 
 
@@ -482,6 +505,8 @@ def get_total_current_settings():
     settings = session.get("total_current_settings", DEFAULT_TOTAL_CURRENT_SETTINGS.copy())
     return {
         "voltage_channel": settings.get("voltage_channel", "X"),
+        "combination_mode": settings.get("combination_mode", "parallel"),
+        "frequency_tolerance_percent": str(settings.get("frequency_tolerance_percent", "5")),
     }
 
 
@@ -538,6 +563,13 @@ def parse_positive_component_value(raw_value, field_name):
     value, normalized = parse_float_field(raw_value, field_name)
     if value <= 0:
         raise ValueError(f"El campo {field_name} debe ser mayor que cero.")
+    return value, normalized
+
+
+def parse_nonnegative_float_field(raw_value, field_name, default=0.0):
+    value, normalized = parse_float_field(raw_value, field_name, default=default)
+    if value < 0:
+        raise ValueError(f"El campo {field_name} no puede ser negativo.")
     return value, normalized
 
 
@@ -720,6 +752,12 @@ def build_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
         "current_max": 0.0,
         "current_min": 0.0,
         "current_peak_to_peak": 0.0,
+        "phase_angle_deg": 0.0,
+        "detected_frequency_hz": 0.0,
+        "inductor_initial_mode": settings["inductor_initial_mode"],
+        "inductor_initial_value": 0.0,
+        "inductor_initial_value_input": settings["inductor_initial_value"],
+        "warnings": [],
         "current": np.array([]),
         "graph": generate_voltage_current_grafic([], [], [], "Current Analysis"),
         "enabled": False,
@@ -745,6 +783,8 @@ def build_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
         settings["channel"],
         settings["method"],
         component_value,
+        settings.get("inductor_initial_mode", "zero"),
+        settings.get("inductor_initial_value", "0"),
         _freeze_value(get_calibration_settings()),
         session.get("math_operation"),
     )
@@ -752,9 +792,37 @@ def build_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
     if cached is not None:
         return cached
 
-    current_data = calculate_current_analysis(selected_signal, fs, settings["method"], component_value)
+    try:
+        initial_current_value, _ = parse_float_field(
+            settings.get("inductor_initial_value", "0"),
+            "condicion inicial del inductor",
+            default=0.0,
+        )
+    except ValueError:
+        initial_current_value = 0.0
+    current_data = calculate_current_analysis(
+        selected_signal,
+        fs,
+        settings["method"],
+        component_value,
+        initial_condition_mode=settings.get("inductor_initial_mode", "zero"),
+        initial_current_value=initial_current_value,
+    )
     current_data["channel"] = settings["channel"]
     current_data["component_value_input"] = settings["component_value"]
+    current_data["inductor_initial_mode"] = settings.get("inductor_initial_mode", "zero")
+    current_data["inductor_initial_value_input"] = settings.get("inductor_initial_value", "0")
+    current_data["source_frequency_hz"] = round(float(estimate_frequency_hz(selected_signal, fs)), 6) if fs > 0 else 0.0
+    current_data["source_voltage"] = np.asarray(selected_signal, dtype=float)
+    current_data["source_time_axis"] = np.asarray(time_axis, dtype=float)
+    phase_data = calculate_voltage_current_phase_angle(selected_signal, current_data.get("current", []), fs)
+    current_data["phase_angle_deg"] = phase_data.get("phase_angle_deg", 0.0)
+    if not phase_data.get("enabled"):
+        warnings = list(current_data.get("warnings", []))
+        warning_message = "No se pudo estimar el desfase entre voltaje y corriente con suficiente confianza."
+        if warning_message not in warnings:
+            warnings.append(warning_message)
+        current_data["warnings"] = warnings
     graph_key = get_current_graph_key(settings["channel"], settings["method"], component_value)
     current_data["graph"] = _cache_get(GRAPH_CACHE, graph_key)
     if current_data["graph"] is None:
@@ -773,10 +841,21 @@ def save_current_snapshot(snapshot_name, current_data, time_axis, file_name):
         return False
 
     waveform_id = uuid.uuid4().hex
+    source_voltage = np.asarray(current_data.get("source_voltage", []), dtype=float)
+    source_time_axis = np.asarray(current_data.get("source_time_axis", time_axis), dtype=float)
+    source_fs = 1.0 / np.mean(np.diff(source_time_axis)) if source_time_axis.size > 1 else 0.0
     template, frequency_hz = build_cycle_template(
         np.asarray(current_data.get("current", []), dtype=float),
         np.asarray(time_axis, dtype=float),
         1.0 / np.mean(np.diff(time_axis)) if np.asarray(time_axis).size > 1 else 0.0,
+    )
+    voltage_template, voltage_frequency_hz = build_cycle_template(
+        source_voltage,
+        source_time_axis,
+        source_fs,
+    )
+    relative_phase_shift_cycles = (
+        estimate_template_phase_shift(voltage_template, template) if voltage_template.size > 0 and template.size > 0 else 0.0
     )
     with CACHE_LOCK:
         CURRENT_WAVEFORM_STORE[waveform_id] = {
@@ -784,6 +863,10 @@ def save_current_snapshot(snapshot_name, current_data, time_axis, file_name):
             "current": np.asarray(current_data.get("current", []), dtype=float),
             "template": template,
             "frequency_hz": frequency_hz,
+            "voltage_template": voltage_template,
+            "voltage_frequency_hz": voltage_frequency_hz,
+            "relative_phase_shift_cycles": relative_phase_shift_cycles,
+            "phase_angle_deg": float(current_data.get("phase_angle_deg", 0.0)),
         }
 
     snapshots = session.get("current_snapshots", [])
@@ -798,6 +881,8 @@ def save_current_snapshot(snapshot_name, current_data, time_axis, file_name):
             "component_value": current_data.get("component_value", 0.0),
             "current_rms": current_data.get("current_rms", 0.0),
             "current_peak_to_peak": current_data.get("current_peak_to_peak", 0.0),
+            "frequency_hz": round(float(frequency_hz), 6),
+            "phase_angle_deg": round(float(current_data.get("phase_angle_deg", 0.0)), 4),
         }
     )
     trimmed = snapshots[-20:]
@@ -810,13 +895,18 @@ def save_current_snapshot(snapshot_name, current_data, time_axis, file_name):
     return True
 
 
-def _resample_current_to_reference(reference_time_axis, reference_frequency_hz, sample):
+def _resample_current_to_reference(reference_time_axis, reference_frequency_hz, reference_voltage_template, sample):
     reference_time_axis = np.asarray(reference_time_axis, dtype=float)
     template = np.asarray(sample.get("template", []), dtype=float)
     if reference_time_axis.size == 0:
         return np.zeros_like(reference_time_axis)
     if template.size > 0 and reference_frequency_hz > 0:
-        return project_cycle_template(template, reference_time_axis, reference_frequency_hz)
+        aligned_template = template
+        sample_voltage_template = np.asarray(sample.get("voltage_template", []), dtype=float)
+        if reference_voltage_template.size > 0 and sample_voltage_template.size > 0:
+            shift_fraction = estimate_template_phase_shift(reference_voltage_template, sample_voltage_template)
+            aligned_template = shift_cycle_template(aligned_template, shift_fraction)
+        return project_cycle_template(aligned_template, reference_time_axis, reference_frequency_hz)
 
     sample_time = np.asarray(sample.get("time_axis", []), dtype=float)
     sample_current = np.asarray(sample.get("current", []), dtype=float)
@@ -835,13 +925,19 @@ def build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
     empty = {
         "enabled": False,
         "voltage_channel": settings["voltage_channel"],
+        "combination_mode": settings["combination_mode"],
+        "frequency_tolerance_percent": settings["frequency_tolerance_percent"],
         "saved_count": len(session.get("current_snapshots", [])),
+        "compatible_count": 0,
+        "incompatible_count": 0,
         "total_current_mean": 0.0,
         "total_current_rms": 0.0,
         "total_current_max": 0.0,
         "total_current_min": 0.0,
         "total_current_peak_to_peak": 0.0,
         "phase_angle_deg": 0.0,
+        "series_mismatch_rms": 0.0,
+        "warnings": [],
         "graph": generate_voltage_current_grafic([], [], [], "Total Current Analysis"),
     }
     if not session.get("total_current_enabled"):
@@ -861,18 +957,54 @@ def build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
     if voltage.size == 0 or reference_time_axis.size == 0:
         return empty
     reference_frequency_hz = estimate_frequency_hz(voltage, fs)
+    reference_voltage_template, _ = build_cycle_template(voltage, reference_time_axis, fs)
+    try:
+        tolerance_percent, _ = parse_nonnegative_float_field(
+            settings.get("frequency_tolerance_percent", "5"),
+            "tolerancia de frecuencia",
+            default=5.0,
+        )
+    except ValueError:
+        tolerance_percent = 5.0
 
-    total_current = np.zeros_like(reference_time_axis, dtype=float)
-    used_count = 0
+    warnings = []
+    aligned_currents = []
+    incompatible_count = 0
     for item in saved_metadata:
         sample = _cache_get(CURRENT_WAVEFORM_STORE, item["id"])
         if sample is None:
             continue
-        total_current += _resample_current_to_reference(reference_time_axis, reference_frequency_hz, sample)
-        used_count += 1
+        sample_frequency_hz = float(sample.get("frequency_hz", 0.0) or 0.0)
+        if reference_frequency_hz > 0 and sample_frequency_hz > 0:
+            frequency_error_percent = abs(sample_frequency_hz - reference_frequency_hz) / reference_frequency_hz * 100.0
+            if frequency_error_percent > tolerance_percent:
+                incompatible_count += 1
+                warnings.append(
+                    f"Se omitio '{item.get('name', 'snapshot')}' por incompatibilidad de frecuencia ({sample_frequency_hz:.4f} Hz vs {reference_frequency_hz:.4f} Hz)."
+                )
+                continue
+        aligned_currents.append(
+            _resample_current_to_reference(reference_time_axis, reference_frequency_hz, reference_voltage_template, sample)
+        )
+
+    used_count = len(aligned_currents)
 
     if used_count == 0:
+        empty["incompatible_count"] = incompatible_count
+        empty["warnings"] = warnings or ["No hay corrientes compatibles para combinar con la referencia actual."]
         return empty
+
+    stacked_currents = np.vstack(aligned_currents)
+    combination_mode = settings.get("combination_mode", "parallel")
+    if combination_mode == "series":
+        total_current = np.mean(stacked_currents, axis=0)
+        mismatch = np.sqrt(np.mean((stacked_currents - total_current) ** 2, axis=1))
+        series_mismatch_rms = round(float(np.max(mismatch)), 6) if mismatch.size else 0.0
+        if series_mismatch_rms > max(float(np.sqrt(np.mean(total_current ** 2))) * 0.1, 1e-9):
+            warnings.append("Las corrientes en modo serie no coinciden bien entre si; revise polaridad, fase y compatibilidad fisica.")
+    else:
+        total_current = np.sum(stacked_currents, axis=0)
+        series_mismatch_rms = 0.0
 
     finite_current = total_current[np.isfinite(total_current)]
     if finite_current.size == 0:
@@ -883,6 +1015,8 @@ def build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
         "total_current_graph",
         session.get("file_wav"),
         settings["voltage_channel"],
+        settings["combination_mode"],
+        settings["frequency_tolerance_percent"],
         tuple(item["id"] for item in saved_metadata),
         _freeze_value(get_calibration_settings()),
         session.get("math_operation"),
@@ -900,13 +1034,19 @@ def build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name):
     return {
         "enabled": True,
         "voltage_channel": settings["voltage_channel"],
+        "combination_mode": combination_mode,
+        "frequency_tolerance_percent": settings["frequency_tolerance_percent"],
         "saved_count": used_count,
+        "compatible_count": used_count,
+        "incompatible_count": incompatible_count,
         "total_current_mean": round(float(np.mean(finite_current)), 6),
         "total_current_rms": round(float(np.sqrt(np.mean(finite_current ** 2))), 6),
         "total_current_max": round(float(np.max(finite_current)), 6),
         "total_current_min": round(float(np.min(finite_current)), 6),
         "total_current_peak_to_peak": round(float(np.ptp(finite_current)), 6),
         "phase_angle_deg": phase_data.get("phase_angle_deg", 0.0),
+        "series_mismatch_rms": series_mismatch_rms,
+        "warnings": warnings,
         "graph": graph,
         "current": total_current,
     }
@@ -1191,6 +1331,11 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "current_max": 0.0,
             "current_min": 0.0,
             "current_peak_to_peak": 0.0,
+            "phase_angle_deg": 0.0,
+            "detected_frequency_hz": 0.0,
+            "inductor_initial_mode": "zero",
+            "inductor_initial_value_input": "0",
+            "warnings": [],
             "current": np.array([]),
             "graph": generate_voltage_current_grafic([], [], [], "Current Analysis"),
             "enabled": False,
@@ -1198,13 +1343,19 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
         "total_current_data": {
             "enabled": False,
             "voltage_channel": "X",
+            "combination_mode": "parallel",
+            "frequency_tolerance_percent": "5",
             "saved_count": 0,
+            "compatible_count": 0,
+            "incompatible_count": 0,
             "total_current_mean": 0.0,
             "total_current_rms": 0.0,
             "total_current_max": 0.0,
             "total_current_min": 0.0,
             "total_current_peak_to_peak": 0.0,
             "phase_angle_deg": 0.0,
+            "series_mismatch_rms": 0.0,
+            "warnings": [],
             "graph": generate_voltage_current_grafic([], [], [], "Total Current Analysis"),
         },
         "correlation_data": {
@@ -1408,6 +1559,11 @@ def prepare_analysis_context(action_name=None):
                 "current_max": current_data.get("current_max", 0.0),
                 "current_min": current_data.get("current_min", 0.0),
                 "current_peak_to_peak": current_data.get("current_peak_to_peak", 0.0),
+                "phase_angle_deg": current_data.get("phase_angle_deg", 0.0),
+                "detected_frequency_hz": current_data.get("detected_frequency_hz", 0.0),
+                "inductor_initial_mode": current_data.get("inductor_initial_mode", get_current_settings()["inductor_initial_mode"]),
+                "inductor_initial_value_input": current_data.get("inductor_initial_value_input", get_current_settings()["inductor_initial_value"]),
+                "warnings": current_data.get("warnings", []),
                 "graph": current_graph,
                 "enabled": bool(session.get("current_enabled")),
             }
@@ -1498,17 +1654,29 @@ def store_enabled_views(context):
             "current_max": context["current_data"]["current_max"],
             "current_min": context["current_data"]["current_min"],
             "current_peak_to_peak": context["current_data"]["current_peak_to_peak"],
+            "phase_angle_deg": context["current_data"].get("phase_angle_deg", 0.0),
+            "detected_frequency_hz": context["current_data"].get("detected_frequency_hz", 0.0),
+            "inductor_initial_mode": context["current_data"].get("inductor_initial_mode", "zero"),
+            "inductor_initial_value": context["current_data"].get("initial_current_value", 0.0),
+            "inductor_initial_value_input": context["current_data"].get("inductor_initial_value_input", "0"),
+            "warnings": context["current_data"].get("warnings", []),
         }
     if context["total_current_data"]["enabled"]:
         session["total_current_data"] = {
             "voltage_channel": context["total_current_data"]["voltage_channel"],
+            "combination_mode": context["total_current_data"].get("combination_mode", "parallel"),
+            "frequency_tolerance_percent": context["total_current_data"].get("frequency_tolerance_percent", "5"),
             "saved_count": context["total_current_data"]["saved_count"],
+            "compatible_count": context["total_current_data"].get("compatible_count", 0),
+            "incompatible_count": context["total_current_data"].get("incompatible_count", 0),
             "total_current_mean": context["total_current_data"]["total_current_mean"],
             "total_current_rms": context["total_current_data"]["total_current_rms"],
             "total_current_max": context["total_current_data"]["total_current_max"],
             "total_current_min": context["total_current_data"]["total_current_min"],
             "total_current_peak_to_peak": context["total_current_data"]["total_current_peak_to_peak"],
             "phase_angle_deg": context["total_current_data"]["phase_angle_deg"],
+            "series_mismatch_rms": context["total_current_data"].get("series_mismatch_rms", 0.0),
+            "warnings": context["total_current_data"].get("warnings", []),
         }
     if context["correlation_data"]["enabled"]:
         session["correlation_data"] = {
@@ -1645,6 +1813,11 @@ def main():
                 request.form.get("current_component_value"),
                 "valor del componente",
             )
+            initial_current_value, normalized_initial_current = parse_float_field(
+                request.form.get("current_inductor_initial_value"),
+                "corriente inicial del inductor",
+                default=0.0,
+            )
         except ValueError as exc:
             error_message = str(exc)
         else:
@@ -1653,6 +1826,8 @@ def main():
                 "channel": request.form.get("current_channel", "X"),
                 "method": request.form.get("current_method", "resistor"),
                 "component_value": normalized,
+                "inductor_initial_mode": request.form.get("current_inductor_initial_mode", "zero"),
+                "inductor_initial_value": normalized_initial_current or "0",
             }
             method_label = {
                 "resistor": "resistor",
@@ -1670,12 +1845,23 @@ def main():
 
     if request.method == "POST" and "total_current_apply" in request.form:
         action_name = "current"
-        session["total_current_settings"] = {
-            "voltage_channel": request.form.get("total_current_voltage_channel", "X"),
-        }
-        session["total_current_enabled"] = True
-        toast_message = f"Total current analysis applied using voltage channel {session['total_current_settings']['voltage_channel']}."
-        toast_variant = "success"
+        try:
+            _, tolerance_normalized = parse_nonnegative_float_field(
+                request.form.get("total_current_frequency_tolerance"),
+                "tolerancia de frecuencia",
+                default=5.0,
+            )
+        except ValueError as exc:
+            error_message = str(exc)
+        else:
+            session["total_current_settings"] = {
+                "voltage_channel": request.form.get("total_current_voltage_channel", "X"),
+                "combination_mode": request.form.get("total_current_combination_mode", "parallel"),
+                "frequency_tolerance_percent": tolerance_normalized or "5",
+            }
+            session["total_current_enabled"] = True
+            toast_message = f"Total current analysis applied using voltage channel {session['total_current_settings']['voltage_channel']}."
+            toast_variant = "success"
 
     if request.method == "POST" and "correlation_apply" in request.form:
         action_name = "correlation"
@@ -1960,7 +2146,14 @@ def download_graph():
     context = prepare_download_data()
     if not context:
         return "No hay archivo cargado o el archivo es invalido", 400
-    png_path = generate_grafic_download(context["time_axis"], context["ch1"], context["ch2"], context["file_name"], context["measures"])
+    png_path = generate_grafic_download(
+        context["time_axis"],
+        context["ch1"],
+        context["ch2"],
+        context["file_name"],
+        context["measures"],
+        scope_config=context["config"],
+    )
     cleanup_temp_download(png_path)
     return send_file(png_path, mimetype="image/png", as_attachment=True, download_name=f"{context['file_name']}_graph.png")
 

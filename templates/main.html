@@ -61,6 +61,10 @@
                 <tr><td>Probe</td><td>{{ config.probe[0] }}x</td><td>{{ config.probe[1] }}x</td></tr>
                 <tr><td>Coupling</td><td>{{ config.coupling[0] }}</td><td>{{ config.coupling[1] }}</td></tr>
                 <tr><td>Time/div</td><td colspan="2">{{ config.time_div }} {{ config.time_units }}/div</td></tr>
+                <tr><td>Trigger type</td><td colspan="2">{{ config.trigger_type }}</td></tr>
+                <tr><td>Trigger edge</td><td colspan="2">{{ config.trigger_edge }}</td></tr>
+                <tr><td>Trigger channel</td><td colspan="2">{{ config.trigger_channel }}</td></tr>
+                <tr><td>Trigger 50%</td><td colspan="2">{{ config.trigger_50 }}</td></tr>
             </tbody>
         </table>
     </section>
@@ -386,16 +390,34 @@
                 <label>Component value
                     <input type="number" step="any" min="0" name="current_component_value" value="{{ current_data.component_value_input }}" class="control-input" placeholder="Use ohm, F or H" {% if not file %}disabled{% endif %}>
                 </label>
+                <label>Inductor initial mode
+                    <select name="current_inductor_initial_mode" class="control-input" {% if not file %}disabled{% endif %}>
+                        <option value="zero" {% if current_data.inductor_initial_mode == 'zero' %}selected{% endif %}>Zero initial current</option>
+                        <option value="zero_mean" {% if current_data.inductor_initial_mode == 'zero_mean' %}selected{% endif %}>Force mean current to zero</option>
+                        <option value="manual" {% if current_data.inductor_initial_mode == 'manual' %}selected{% endif %}>Manual initial current</option>
+                    </select>
+                </label>
+                <label>Manual initial current (A)
+                    <input type="number" step="any" name="current_inductor_initial_value" value="{{ current_data.inductor_initial_value_input }}" class="control-input" placeholder="0" {% if not file %}disabled{% endif %}>
+                </label>
                 <button class="filtro_btn" type="submit" {% if not file %}disabled{% endif %}>Apply current analysis</button>
             </form>
-            <p class="section-note">Use ohm for resistor mode, farad for capacitor mode, and henry for inductor mode. The current is calculated point by point from the selected voltage waveform.</p>
+            <p class="section-note">Use ohm for resistor mode, farad for capacitor mode, and henry for inductor mode. The current is calculated point by point from the selected voltage waveform, and the inductor now preserves the chosen initial-condition mode instead of always forcing zero mean.</p>
             <div class="fft-summary">
                 <div class="fft-card"><span>Mean current</span><strong>{{ current_data.current_mean }} A</strong></div>
                 <div class="fft-card"><span>RMS current</span><strong>{{ current_data.current_rms }} A</strong></div>
                 <div class="fft-card"><span>Max current</span><strong>{{ current_data.current_max }} A</strong></div>
                 <div class="fft-card"><span>Min current</span><strong>{{ current_data.current_min }} A</strong></div>
                 <div class="fft-card"><span>Peak-to-peak current</span><strong>{{ current_data.current_peak_to_peak }} A</strong></div>
+                <div class="fft-card"><span>Phase angle</span><strong>{{ current_data.phase_angle_deg }} deg</strong></div>
             </div>
+            {% if current_data.warnings %}
+            <div class="alert">
+                {% for warning in current_data.warnings %}
+                <div>{{ warning }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
             <div class="graph-frame"><img src="data:image/png;base64,{{ current_data.graph }}" alt="Voltage and current graph"></div>
             <form class="download" action="{{ url_for('download_current_graph') }}" method="get">
                 <span>Download current graph</span>
@@ -422,7 +444,7 @@
                         <td>{{ item.name }}</td>
                         <td>{{ item.file_name }}</td>
                         <td>{{ item.method }}</td>
-                        <td>{{ item.current_rms }} A</td>
+                        <td>{{ item.current_rms }} A ({{ item.frequency_hz }} Hz)</td>
                     </tr>
                     {% else %}
                     <tr><td colspan="4">No saved current calculations.</td></tr>
@@ -447,14 +469,32 @@
                         <option value="MATH" {% if total_current_data.voltage_channel == 'MATH' %}selected{% endif %}>MATH</option>
                     </select>
                 </label>
+                <label>Topology
+                    <select name="total_current_combination_mode" class="control-input" {% if not file or not current_snapshots %}disabled{% endif %}>
+                        <option value="parallel" {% if total_current_data.combination_mode == 'parallel' %}selected{% endif %}>Parallel: sum currents</option>
+                        <option value="series" {% if total_current_data.combination_mode == 'series' %}selected{% endif %}>Series: compare currents</option>
+                    </select>
+                </label>
+                <label>Frequency tolerance (%)
+                    <input type="number" step="any" min="0" name="total_current_frequency_tolerance" value="{{ total_current_data.frequency_tolerance_percent }}" class="control-input" placeholder="5" {% if not file or not current_snapshots %}disabled{% endif %}>
+                </label>
                 <button class="filtro_btn" type="submit" {% if not file or not current_snapshots %}disabled{% endif %}>Apply total current</button>
             </form>
             <div class="fft-summary">
-                <div class="fft-card"><span>Saved currents</span><strong>{{ total_current_data.saved_count }}</strong></div>
+                <div class="fft-card"><span>Compatible currents</span><strong>{{ total_current_data.compatible_count }}</strong></div>
+                <div class="fft-card"><span>Rejected currents</span><strong>{{ total_current_data.incompatible_count }}</strong></div>
                 <div class="fft-card"><span>Total RMS</span><strong>{{ total_current_data.total_current_rms }} A</strong></div>
                 <div class="fft-card"><span>Total peak-to-peak</span><strong>{{ total_current_data.total_current_peak_to_peak }} A</strong></div>
                 <div class="fft-card"><span>Phase angle</span><strong>{{ total_current_data.phase_angle_deg }} deg</strong></div>
+                <div class="fft-card"><span>Series mismatch RMS</span><strong>{{ total_current_data.series_mismatch_rms }} A</strong></div>
             </div>
+            {% if total_current_data.warnings %}
+            <div class="alert">
+                {% for warning in total_current_data.warnings %}
+                <div>{{ warning }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
             <div class="graph-frame"><img src="data:image/png;base64,{{ total_current_data.graph }}" alt="Total current graph"></div>
             <form class="download" action="{{ url_for('download_total_current_graph') }}" method="get">
                 <span>Download total current graph</span>
@@ -738,6 +778,9 @@
             "statistics_apply",
             "advanced_apply",
             "calculus_apply",
+            "current_apply",
+            "current_save",
+            "total_current_apply",
             "correlation_apply",
             "calibration_apply",
             "cursor_apply",

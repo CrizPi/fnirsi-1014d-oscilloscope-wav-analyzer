@@ -21,8 +21,8 @@ def _latex_escape(value):
     return text
 
 
-def generate_grafic_download(t, ch1, ch2, file_name, measures=None, show_empty=False):
-    return generate_grafic_file(t, ch1, ch2, file_name, measures=measures, show_empty=show_empty)
+def generate_grafic_download(t, ch1, ch2, file_name, measures=None, scope_config=None, show_empty=False):
+    return generate_grafic_file(t, ch1, ch2, file_name, measures=measures, scope_config=scope_config, show_empty=show_empty)
 
 
 def generate_grafic_download_math(t, ch1, ch2, file_name, math_result=None):
@@ -309,11 +309,13 @@ def generate_current_latex(current_data):
         ("Channel", current_data.get("channel", "X"), ""),
         ("Method", method_labels.get(method, method), ""),
         ("Component value", f"{current_data.get('component_value', 0)} {unit_labels.get(method, '')}", ""),
+        ("Initial condition", current_data.get("inductor_initial_mode", "zero"), ""),
         ("Mean current", f"{current_data.get('current_mean', 0)} A", ""),
         ("RMS current", f"{current_data.get('current_rms', 0)} A", ""),
         ("Max current", f"{current_data.get('current_max', 0)} A", ""),
         ("Min current", f"{current_data.get('current_min', 0)} A", ""),
         ("Peak-to-peak current", f"{current_data.get('current_peak_to_peak', 0)} A", ""),
+        ("Phase angle", f"{current_data.get('phase_angle_deg', 0)} deg", ""),
     ]
     return generate_latex_table(rows, caption="Calculated Current Analysis", headers=("Value", ""))
 
@@ -321,12 +323,16 @@ def generate_current_latex(current_data):
 def generate_total_current_latex(total_current_data):
     rows = [
         ("Voltage channel", total_current_data.get("voltage_channel", "X"), ""),
+        ("Combination mode", total_current_data.get("combination_mode", "parallel"), ""),
+        ("Frequency tolerance", f"{total_current_data.get('frequency_tolerance_percent', 5)} %", ""),
         ("Saved currents", total_current_data.get("saved_count", 0), ""),
+        ("Rejected currents", total_current_data.get("incompatible_count", 0), ""),
         ("Mean total current", f"{total_current_data.get('total_current_mean', 0)} A", ""),
         ("RMS total current", f"{total_current_data.get('total_current_rms', 0)} A", ""),
         ("Max total current", f"{total_current_data.get('total_current_max', 0)} A", ""),
         ("Min total current", f"{total_current_data.get('total_current_min', 0)} A", ""),
         ("Peak-to-peak total current", f"{total_current_data.get('total_current_peak_to_peak', 0)} A", ""),
         ("Phase angle", f"{total_current_data.get('phase_angle_deg', 0)} deg", ""),
+        ("Series mismatch RMS", f"{total_current_data.get('series_mismatch_rms', 0)} A", ""),
     ]
     return generate_latex_table(rows, caption="Total Current Analysis", headers=("Value", ""))

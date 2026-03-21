@@ -92,6 +92,52 @@ def _savgol_first_derivative(signal, fs):
         return np.gradient(signal, 1.0 / fs)
 
 
+def _append_warning(warnings, message):
+    if message and message not in warnings:
+        warnings.append(message)
+
+
+def _build_current_quality_warnings(signal, current, fs, method, frequency_hz):
+    warnings = []
+    signal = _replace_nonfinite(signal)
+    current = _replace_nonfinite(current)
+    signal = np.asarray(signal, dtype=float)
+    current = np.asarray(current, dtype=float)
+
+    if signal.size < 64:
+        _append_warning(warnings, "La medicion tiene pocas muestras; la corriente estimada puede ser inestable.")
+
+    if frequency_hz > 0 and fs > 0:
+        samples_per_cycle = fs / frequency_hz
+        if samples_per_cycle < 20:
+            _append_warning(warnings, "La resolucion temporal es baja para la frecuencia detectada; puede haber error de fase y amplitud.")
+
+    signal_span = float(np.ptp(signal)) if signal.size else 0.0
+    signal_std = float(np.std(signal)) if signal.size else 0.0
+    current_std = float(np.std(current)) if current.size else 0.0
+
+    if signal_span > 0 and abs(float(np.mean(signal))) > signal_span * 0.1 and method == "inductor":
+        _append_warning(warnings, "El voltaje del inductor tiene componente DC apreciable; la integracion puede derivar con fuerza.")
+
+    if method == "capacitor" and signal_span > 0:
+        derivative_scale = float(np.std(np.diff(signal))) if signal.size > 1 else 0.0
+        if derivative_scale > signal_span * 0.08:
+            _append_warning(warnings, "La derivada es sensible al ruido en esta captura; conviene revisar filtrado y resolucion.")
+
+    if method == "inductor" and current.size > 1:
+        drift_ratio = abs(float(current[-1] - current[0])) / max(float(np.ptp(current)), 1e-9)
+        if drift_ratio > 0.4:
+            _append_warning(warnings, "La corriente integrada presenta deriva apreciable; revise offset y condicion inicial.")
+
+    if signal_span > 0 and signal_std < signal_span * 0.08:
+        _append_warning(warnings, "La senal util ocupa poca dinamica respecto al rango medido; la relacion senal-ruido puede ser limitada.")
+
+    if current_std <= 1e-12:
+        _append_warning(warnings, "La corriente estimada es casi constante; confirme valor del componente y polaridad de la captura.")
+
+    return warnings
+
+
 def _smooth_math_subtraction(result, ch1, ch2):
     result = _replace_nonfinite(result)
     result = np.asarray(result, dtype=float)
@@ -118,7 +164,74 @@ def _smooth_math_subtraction(result, ch1, ch2):
     return filtered
 
 
-def get_scope_fs_and_time(ch1, config, screen_divisions=14):
+def _find_trigger_sample_index(signal, edge="rising", threshold=0.0, reference_index=None):
+    signal = _replace_nonfinite(signal)
+    signal = np.asarray(signal, dtype=float)
+    if signal.size < 2:
+        return 0.0
+
+    if reference_index is None:
+        reference_index = signal.size / 2.0
+
+    crossings = []
+    for index in range(signal.size - 1):
+        y0 = signal[index]
+        y1 = signal[index + 1]
+        if y1 == y0:
+            continue
+
+        if edge == "falling":
+            matched = y0 > threshold >= y1
+        else:
+            matched = y0 < threshold <= y1
+
+        if not matched:
+            continue
+
+        fraction = (threshold - y0) / (y1 - y0)
+        crossings.append(index + fraction)
+
+    if not crossings:
+        return float(reference_index)
+
+    return float(min(crossings, key=lambda crossing: abs(crossing - reference_index)))
+
+
+def crop_scope_window(ch1, ch2, config):
+    ch1 = np.asarray(ch1 if ch1 is not None else [], dtype=float)
+    ch2 = np.asarray(ch2 if ch2 is not None else [], dtype=float)
+    sample_count = min(ch1.size, ch2.size) if ch1.size and ch2.size else max(ch1.size, ch2.size)
+    if sample_count < 3:
+        return ch1, ch2, 0.0
+
+    ch1 = ch1[:sample_count]
+    ch2 = ch2[:sample_count]
+
+    trigger_channel = (config.get("trigger_channel") or "CH1").upper()
+    trigger_edge = (config.get("trigger_edge") or "rising").lower()
+    trigger_signal = ch1 if trigger_channel == "CH1" or ch2.size == 0 else ch2
+    trigger_index = _find_trigger_sample_index(
+        trigger_signal,
+        edge=trigger_edge,
+        threshold=0.0,
+        reference_index=sample_count / 2.0,
+    )
+
+    trigger_sample = int(round(trigger_index))
+    trigger_sample = min(max(trigger_sample, 0), sample_count - 1)
+    half_window = min(trigger_sample, sample_count - 1 - trigger_sample)
+    if half_window < 1:
+        return ch1, ch2, float(trigger_sample)
+
+    start = trigger_sample - half_window
+    end = trigger_sample + half_window + 1
+    cropped_ch1 = ch1[start:end]
+    cropped_ch2 = ch2[start:end]
+    relative_trigger_index = float(trigger_index - start)
+    return cropped_ch1, cropped_ch2, relative_trigger_index
+
+
+def get_scope_fs_and_time(ch1, config, ch2=None, screen_divisions=14, trigger_index=None):
     """
     Calcula la frecuencia de muestreo y el vector de tiempo.
     """
@@ -129,7 +242,18 @@ def get_scope_fs_and_time(ch1, config, screen_divisions=14):
 
     total_time = screen_divisions * time_div_s
     fs = sample_count / total_time
-    return fs, np.arange(sample_count) / fs
+    if trigger_index is None:
+        trigger_channel = (config.get("trigger_channel") or "CH1").upper()
+        trigger_edge = (config.get("trigger_edge") or "rising").lower()
+        trigger_signal = ch1 if trigger_channel == "CH1" or ch2 is None else ch2
+        trigger_index = _find_trigger_sample_index(
+            trigger_signal,
+            edge=trigger_edge,
+            threshold=0.0,
+            reference_index=sample_count / 2.0,
+        )
+    time_axis = (np.arange(sample_count, dtype=float) - trigger_index) / fs
+    return fs, time_axis
 
 
 def calculate_frequency(signal, fs):
@@ -745,9 +869,10 @@ def calculate_correlation_analysis(ch1, ch2, fs):
     }
 
 
-def calculate_current_analysis(signal, fs, method, component_value):
+def calculate_current_analysis(signal, fs, method, component_value, initial_condition_mode="zero", initial_current_value=0.0):
     signal = _smooth_signal(signal, fs, mode="derivative" if (method or "").lower() == "capacitor" else "general")
     method = (method or "resistor").lower()
+    initial_condition_mode = (initial_condition_mode or "zero").lower()
 
     empty = {
         "current": np.array([]),
@@ -758,6 +883,10 @@ def calculate_current_analysis(signal, fs, method, component_value):
         "current_max": 0.0,
         "current_min": 0.0,
         "current_peak_to_peak": 0.0,
+        "detected_frequency_hz": 0.0,
+        "initial_condition_mode": initial_condition_mode,
+        "initial_current_value": float(initial_current_value or 0.0),
+        "warnings": [],
         "enabled": False,
     }
 
@@ -765,15 +894,19 @@ def calculate_current_analysis(signal, fs, method, component_value):
         return empty
 
     dt = 1.0 / fs
+    frequency_hz = _estimate_frequency_hz(signal, fs)
     if method == "resistor":
         current = signal / component_value
     elif method == "capacitor":
         current = component_value * _savgol_first_derivative(signal, fs)
     elif method == "inductor":
-        signal_for_integral = signal - float(np.mean(signal))
+        signal_for_integral = signal
         trapezoids = (signal_for_integral[1:] + signal_for_integral[:-1]) * 0.5 * dt
         current = np.concatenate(([0.0], np.cumsum(trapezoids))) / component_value
-        current = current - float(np.mean(current))
+        if initial_condition_mode == "manual":
+            current = current + float(initial_current_value or 0.0)
+        elif initial_condition_mode == "zero_mean":
+            current = current - float(np.mean(current))
     else:
         return empty
 
@@ -784,6 +917,7 @@ def calculate_current_analysis(signal, fs, method, component_value):
     if finite_current.size == 0:
         return empty
 
+    warnings = _build_current_quality_warnings(signal, current, fs, method, frequency_hz)
     return {
         "current": current,
         "method": method,
@@ -793,6 +927,10 @@ def calculate_current_analysis(signal, fs, method, component_value):
         "current_max": round(float(np.max(finite_current)), 6),
         "current_min": round(float(np.min(finite_current)), 6),
         "current_peak_to_peak": round(float(np.ptp(finite_current)), 6),
+        "detected_frequency_hz": round(float(frequency_hz), 6),
+        "initial_condition_mode": initial_condition_mode,
+        "initial_current_value": round(float(initial_current_value or 0.0), 6),
+        "warnings": warnings,
         "enabled": True,
     }
 
@@ -988,7 +1126,11 @@ def calculate_manual_measurement(signal, time_axis, t1, t2):
 
 def convert_scope_data(ch1, ch2, config, measures):
     """
-    Convierte datos crudos del osciloscopio a voltajes reales.
+    Convierte las muestras visibles del osciloscopio a voltajes reales.
+
+    Para la grafica de pantalla usamos una transformacion afin basada en
+    Vmax/Vmin del archivo, de modo que se conserve el offset DC real del
+    canal en lugar de asumir que el nivel 200 siempre representa 0 V.
     """
     channels = []
 
@@ -997,19 +1139,24 @@ def convert_scope_data(ch1, ch2, config, measures):
         if raw.size == 0:
             channels.append(raw)
             continue
-        raw_max, raw_min = raw.max(), raw.min()
-        vmax, vmin = measures["Vmax"][channel_index], measures["Vmin"][channel_index]
+
+        raw_max = float(np.max(raw))
+        raw_min = float(np.min(raw))
+        vmax = float(measures["Vmax"][channel_index])
+        vmin = float(measures["Vmin"][channel_index])
+        probe = float(config["probe"][channel_index])
 
         if raw_max == raw_min:
-            midpoint = (vmax + vmin) / 2
-            volts = np.full_like(raw, midpoint * config["probe"][channel_index], dtype=float)
+            midpoint = (vmax + vmin) / 2.0
+            volts = np.full_like(raw, midpoint * probe, dtype=float)
             channels.append(volts)
             continue
-        else:
-            scale = (vmax - vmin) / (raw_max - raw_min)
-            offset = vmax - scale * raw_max
 
-        volts = (scale * raw + offset) * config["probe"][channel_index]
+        # dataScreen usa coordenadas Y desde arriba hacia abajo, asi que el
+        # valor mas pequeno en pantalla corresponde al mayor voltaje.
+        scale = (vmin - vmax) / (raw_max - raw_min)
+        offset = vmax - scale * raw_min
+        volts = (scale * raw + offset) * probe
         channels.append(volts)
 
     return channels[0], channels[1]
