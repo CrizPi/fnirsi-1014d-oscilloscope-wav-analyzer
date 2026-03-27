@@ -1,49 +1,68 @@
-# FNIRSI 1014D Analyzer
+# FNIRSI 1014D WAV Analyzer
 
-Desktop analyzer for `.wav` captures exported by the FNIRSI 1014D oscilloscope.
+Powerful desktop tool to **analyze `.wav` files from the FNIRSI 1014D oscilloscope**.
 
-The app parses the oscilloscope file format, reconstructs the visible waveforms, and provides signal analysis modules for voltage, current, transfer behavior, correlation, FFT, cursors, and report export.
+This project allows you to **parse, reconstruct, visualize, and analyze waveform data** exported by the FNIRSI 1014D, including FFT, signal statistics, current analysis, power calculations, transfer functions, and more.
 
-## Current Scope
+**Keywords:** fnirsi 1014d wav analyzer, oscilloscope waveform analysis, fnirsi data parser, signal processing, waveform fft analysis
 
-This project currently includes:
+---
 
-- desktop UI built with Flask + `pywebview`
-- parsing of FNIRSI header, measures, trigger metadata, and waveform blocks
-- waveform reconstruction aligned to the oscilloscope screen behavior
-- main graph with oscilloscope-like horizontal scaling using `time/div`
-- MATH operations on filtered voltage signals
-- FFT analysis
-- statistics and advanced signal measures
-- derivative and integral analysis
-- current estimation for resistor, capacitor, and inductor models
-- total current summation for saved current calculations from the current file
-- AC power calculation for individual current and total current
-- transfer analysis between `Vin` and `Vout`
-- channel correlation
-- manual cursors
-- cycle analysis
-- LaTeX export for most analysis sections
-- PNG export for the main plot and analysis plots that generate images
+## Descripción (Español)
 
-## Project Structure
+Herramienta de escritorio para **analizar archivos `.wav` exportados por el osciloscopio FNIRSI 1014D**.
+
+Permite reconstruir la señal tal como se muestra en el osciloscopio y realizar análisis avanzados como FFT, potencia AC, correlación, análisis de transferencia, corriente y estadísticas de señal.
+
+---
+
+## Features
+
+- Full **FNIRSI 1014D `.wav` file parsing**
+- Accurate **waveform reconstruction (oscilloscope-like display)**
+- **FFT spectrum analysis**
+- Advanced **signal statistics**
+- **Current and power analysis (AC)**
+- **Transfer function analysis (Vin / Vout)**
+- **Correlation and delay estimation**
+- **Derivative and integral analysis**
+- **Manual cursors and cycle analysis**
+- **LaTeX report export**
+- **PNG graph export**
+
+---
+
+## 🧠 What This Tool Does
+
+Unlike simple waveform viewers, this tool:
+
+- Understands the **internal FNIRSI file structure**
+- Rebuilds the waveform using:
+  - `time/div`
+  - trigger metadata
+  - scaling and probe factors
+- Provides **engineering-level signal analysis tools**
+
+---
+
+## 🧩 Project Structure
 
 ```text
 .
-|-- app.py               # Main Flask app, desktop launcher, routing, session state
-|-- desktop.py           # Minimal desktop entry point
+|-- app.py               # Main Flask app, routing, session state
+|-- desktop.py           # Desktop entry point (pywebview)
 |-- file_analizer.py     # FNIRSI .wav parsing and metadata extraction
-|-- signal_analyzer.py   # Signal processing, measures, current, power, transfer analysis
-|-- plot_maker.py        # Matplotlib plot generation
-|-- report.py            # LaTeX report/export helpers
+|-- signal_analyzer.py   # Signal processing and analysis
+|-- plot_maker.py        # Plot generation (matplotlib)
+|-- report.py            # LaTeX report generation
 |-- templates/
-|   `-- main.html        # Main UI
+|   `-- main.html        # UI
 |-- static/
-|   `-- style.css        # UI styles
+|   `-- style.css        # Styles
 |-- requirements.txt
-|-- app.spec             # PyInstaller spec
-|-- installer.iss        # Inno Setup script
-`-- iniciar.bat          # Local setup helper
+|-- app.spec             # PyInstaller config
+|-- installer.iss        # Windows installer script
+`-- iniciar.bat          # Setup helper
 ```
 
 ## Supported Analysis Modules
