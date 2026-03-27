@@ -1,8 +1,6 @@
-python-3.11.9
 Flask
 Werkzeug
 numpy
 scipy
 matplotlib
-pywebview
 gunicorn
