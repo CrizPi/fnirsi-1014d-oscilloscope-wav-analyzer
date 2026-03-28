@@ -130,6 +130,7 @@
             <button {% if not file %}disabled{% endif %} class="filtro" data-target="calculus">Derivative</button>
             <button {% if not file %}disabled{% endif %} class="filtro" data-target="current">Current</button>
             <button {% if not file %}disabled{% endif %} class="filtro" data-target="transfer">Vin/Vout</button>
+            <button {% if not file %}disabled{% endif %} class="filtro" data-target="xy">X-Y</button>
             <button {% if not file %}disabled{% endif %} class="filtro" data-target="calibration">Calibration</button>
             <button {% if not file %}disabled{% endif %} class="filtro" data-target="cursor">Cursors</button>
             <button {% if not file %}disabled{% endif %} class="filtro" data-target="cycle">Cycle</button>
@@ -564,6 +565,46 @@
             <div class="graph-frame"><img src="data:image/png;base64,{{ transfer_data.graph }}" alt="Transfer analysis graph"></div>
         </div>
         <!-- FRAGMENT:module-transfer:end -->
+
+        <!-- FRAGMENT:module-xy:start -->
+        <div class="contenido xy" id="module-xy">
+            <div class="section-header">
+                <h2>X-Y Mode</h2>
+            </div>
+            <form method="POST" class="fft-form">
+                <input type="hidden" name="xy_apply" value="1">
+                <label>X axis
+                    <select name="xy_x_channel" class="control-input" {% if not file %}disabled{% endif %}>
+                        <option value="X" {% if xy_data.x_channel == 'X' %}selected{% endif %}>X</option>
+                        <option value="Y" {% if xy_data.x_channel == 'Y' %}selected{% endif %}>Y</option>
+                        <option value="MATH" {% if xy_data.x_channel == 'MATH' %}selected{% endif %}>MATH</option>
+                    </select>
+                </label>
+                <label>Y axis
+                    <select name="xy_y_channel" class="control-input" {% if not file %}disabled{% endif %}>
+                        <option value="X" {% if xy_data.y_channel == 'X' %}selected{% endif %}>X</option>
+                        <option value="Y" {% if xy_data.y_channel == 'Y' %}selected{% endif %}>Y</option>
+                        <option value="MATH" {% if xy_data.y_channel == 'MATH' %}selected{% endif %}>MATH</option>
+                    </select>
+                </label>
+                <button class="filtro_btn" type="submit" {% if not file %}disabled{% endif %}>Apply</button>
+            </form>
+            <p class="section-note">Plots the selected Y signal against the selected X signal sample by sample, useful for Lissajous figures and phase relationship inspection.</p>
+            <div class="fft-summary">
+                <div class="fft-card"><span>Samples</span><strong>{{ xy_data.sample_count }}</strong></div>
+                <div class="fft-card"><span>X range</span><strong>{{ xy_data.x_min }} to {{ xy_data.x_max }} V</strong></div>
+                <div class="fft-card"><span>Y range</span><strong>{{ xy_data.y_min }} to {{ xy_data.y_max }} V</strong></div>
+                <div class="fft-card"><span>Correlation</span><strong>{{ xy_data.correlation_coefficient }}</strong></div>
+            </div>
+            <div class="graph-frame"><img src="data:image/png;base64,{{ xy_data.graph }}" alt="X-Y graph"></div>
+            <form class="download" action="{{ url_for('download_xy_graph') }}" method="get">
+                <span>Download X-Y graph</span>
+                <button class="svg" type="submit" {% if not file or not xy_data.enabled %}disabled{% endif %}>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                </button>
+            </form>
+        </div>
+        <!-- FRAGMENT:module-xy:end -->
 
         <!-- FRAGMENT:module-calibration:start -->
         <div class="contenido calibration" id="module-calibration">

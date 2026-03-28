@@ -4,6 +4,7 @@ from plot_maker import (
     generate_grafic_file,
     generate_signal_analysis_grafic_file,
     generate_voltage_current_grafic_file,
+    generate_xy_mode_grafic_file,
 )
 
 
@@ -57,6 +58,10 @@ def generate_correlation_grafic_download(lags_seconds, correlation, title, marke
 
 def generate_current_grafic_download(t, voltage, current, title):
     return generate_voltage_current_grafic_file(t, voltage, current, title)
+
+
+def generate_xy_grafic_download(x_signal, y_signal, title, x_label="X (V)", y_label="Y (V)"):
+    return generate_xy_mode_grafic_file(x_signal, y_signal, title, x_label=x_label, y_label=y_label)
 
 
 def generate_latex_table(rows, caption="Tabla", headers=("X", "Y")):

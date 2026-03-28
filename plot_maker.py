@@ -775,6 +775,51 @@ def generate_correlation_grafic_file(lags_seconds, correlation, title, marker_x=
     return temp_path
 
 
+def generate_xy_mode_grafic(x_signal, y_signal, title, x_label="X (V)", y_label="Y (V)"):
+    fig = _generate_xy_plot(
+        x_signal,
+        y_signal,
+        title,
+        x_label,
+        y_label,
+        "#3fb1b1",
+        "#000000",
+        "#919191",
+        "#2B2B2B",
+        "#919191",
+        "No X-Y data available",
+        120,
+    )
+    buffer = BytesIO()
+    fig.savefig(buffer, format="png", bbox_inches="tight", facecolor=fig.get_facecolor(), dpi=120)
+    buffer.seek(0)
+    image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    plt.close(fig)
+    return image_base64
+
+
+def generate_xy_mode_grafic_file(x_signal, y_signal, title, x_label="X (V)", y_label="Y (V)"):
+    fig = _generate_xy_plot(
+        x_signal,
+        y_signal,
+        title,
+        x_label,
+        y_label,
+        "#0b57d0",
+        "#FFFFFF",
+        "#C0C0C0",
+        "#E6E6E6",
+        "#000000",
+        "No X-Y data available",
+        150,
+    )
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+        fig.savefig(tmp_file.name, format="png", bbox_inches="tight", facecolor=fig.get_facecolor(), dpi=150)
+        temp_path = tmp_file.name
+    plt.close(fig)
+    return temp_path
+
+
 def generate_cursor_grafic(t, signal, title, marker_points=None):
     marker_points = marker_points or []
     vertical_lines = [point[0] for point in marker_points]

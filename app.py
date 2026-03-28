@@ -21,6 +21,7 @@ from plot_maker import (
     generate_grafic,
     generate_signal_analysis_grafic,
     generate_voltage_current_grafic,
+    generate_xy_mode_grafic,
 )
 from report import (
     generate_advanced_measures_latex,
@@ -42,6 +43,7 @@ from report import (
     generate_measures_latex,
     generate_signal_analysis_download,
     generate_statistics_latex,
+    generate_xy_grafic_download,
 )
 from signal_analyzer import (
     adaptive_scope_filter,
@@ -161,6 +163,10 @@ DEFAULT_TRANSFER_SETTINGS = {
     "input_channel": "X",
     "output_channel": "Y",
 }
+DEFAULT_XY_SETTINGS = {
+    "x_channel": "X",
+    "y_channel": "Y",
+}
 DEFAULT_CALIBRATION_SETTINGS = {
     "x_gain": 1.0,
     "y_gain": 1.0,
@@ -189,6 +195,7 @@ AJAX_MODULE_ACTIONS = {
     "calculus",
     "current",
     "transfer",
+    "xy",
     "correlation",
     "calibration",
     "cursor",
@@ -458,6 +465,17 @@ def get_correlation_graph_key():
     return ("correlation_graph", session.get("file_wav"), _freeze_value(get_calibration_settings()))
 
 
+def get_xy_graph_key(x_channel, y_channel):
+    return (
+        "xy_graph",
+        session.get("file_wav"),
+        x_channel,
+        y_channel,
+        _freeze_value(get_calibration_settings()),
+        session.get("math_operation"),
+    )
+
+
 def get_current_graph_key(selected_channel, method, component_value):
     current_settings = get_current_settings()
     return (
@@ -524,6 +542,14 @@ def get_transfer_settings():
     return {
         "input_channel": settings.get("input_channel", "X"),
         "output_channel": settings.get("output_channel", "Y"),
+    }
+
+
+def get_xy_settings():
+    settings = session.get("xy_settings", DEFAULT_XY_SETTINGS.copy())
+    return {
+        "x_channel": settings.get("x_channel", "X"),
+        "y_channel": settings.get("y_channel", "Y"),
     }
 
 
@@ -1218,6 +1244,94 @@ def build_transfer_view(ch1, ch2, math_result, fs, time_axis, file_name):
     return _cache_set(ANALYSIS_CACHE, cache_key, transfer_data)
 
 
+def build_xy_view(ch1, ch2, math_result):
+    settings = get_xy_settings()
+    empty = {
+        "x_channel": settings["x_channel"],
+        "y_channel": settings["y_channel"],
+        "sample_count": 0,
+        "x_min": 0.0,
+        "x_max": 0.0,
+        "y_min": 0.0,
+        "y_max": 0.0,
+        "x_rms": 0.0,
+        "y_rms": 0.0,
+        "correlation_coefficient": 0.0,
+        "graph": generate_xy_mode_grafic([], [], "X-Y Mode", f"{settings['x_channel']} (V)", f"{settings['y_channel']} (V)"),
+        "enabled": False,
+    }
+    if not session.get("xy_enabled"):
+        return empty
+
+    signals = {
+        "X": np.asarray(ch1, dtype=float),
+        "Y": np.asarray(ch2, dtype=float),
+        "MATH": np.asarray(math_result if math_result is not None else np.array([]), dtype=float),
+    }
+    x_signal = signals.get(settings["x_channel"], signals["X"])
+    y_signal = signals.get(settings["y_channel"], signals["Y"])
+    length = min(x_signal.size, y_signal.size)
+    if length == 0:
+        return empty
+
+    cache_key = (
+        "xy",
+        session.get("file_wav"),
+        settings["x_channel"],
+        settings["y_channel"],
+        _freeze_value(get_calibration_settings()),
+        session.get("math_operation"),
+    )
+    cached = _cache_get(ANALYSIS_CACHE, cache_key)
+    if cached is not None:
+        return cached
+
+    x_signal = x_signal[:length]
+    y_signal = y_signal[:length]
+    finite_mask = np.isfinite(x_signal) & np.isfinite(y_signal)
+    x_finite = x_signal[finite_mask]
+    y_finite = y_signal[finite_mask]
+    if x_finite.size == 0 or y_finite.size == 0:
+        return empty
+
+    graph_key = get_xy_graph_key(settings["x_channel"], settings["y_channel"])
+    graph = _cache_get(GRAPH_CACHE, graph_key)
+    x_label = f"{settings['x_channel']} (V)"
+    y_label = f"{settings['y_channel']} (V)"
+    if graph is None:
+        graph = generate_xy_mode_grafic(
+            x_finite,
+            y_finite,
+            f"X-Y Mode {settings['x_channel']} vs {settings['y_channel']}",
+            x_label,
+            y_label,
+        )
+        _cache_set(GRAPH_CACHE, graph_key, graph)
+
+    correlation_coefficient = 0.0
+    if x_finite.size > 1 and y_finite.size > 1:
+        x_std = float(np.std(x_finite))
+        y_std = float(np.std(y_finite))
+        if x_std > 0 and y_std > 0:
+            correlation_coefficient = round(float(np.corrcoef(x_finite, y_finite)[0, 1]), 6)
+
+    xy_data = {
+        "x_channel": settings["x_channel"],
+        "y_channel": settings["y_channel"],
+        "sample_count": int(x_finite.size),
+        "x_min": round(float(np.min(x_finite)), 6),
+        "x_max": round(float(np.max(x_finite)), 6),
+        "y_min": round(float(np.min(y_finite)), 6),
+        "y_max": round(float(np.max(y_finite)), 6),
+        "x_rms": round(float(np.sqrt(np.mean(x_finite ** 2))), 6),
+        "y_rms": round(float(np.sqrt(np.mean(y_finite ** 2))), 6),
+        "correlation_coefficient": correlation_coefficient,
+        "graph": graph,
+        "enabled": True,
+    }
+    return _cache_set(ANALYSIS_CACHE, cache_key, xy_data)
+
+
 def build_cursor_view(ch1, ch2, math_result, time_axis):
     settings = get_cursor_settings()
     empty = {
@@ -1498,6 +1612,20 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "graph": generate_grafic([], [], [], "Transfer Analysis", show_empty=True),
             "enabled": False,
         },
+        "xy_data": {
+            "x_channel": "X",
+            "y_channel": "Y",
+            "sample_count": 0,
+            "x_min": 0.0,
+            "x_max": 0.0,
+            "y_min": 0.0,
+            "y_max": 0.0,
+            "x_rms": 0.0,
+            "y_rms": 0.0,
+            "correlation_coefficient": 0.0,
+            "graph": generate_xy_mode_grafic([], [], "X-Y Mode", "X (V)", "Y (V)"),
+            "enabled": False,
+        },
         "total_current_data": {
             "enabled": False,
             "voltage_channel": "X",
@@ -1616,6 +1744,7 @@ def build_ajax_fragment_response(rendered_html, action_name, error_message=None)
         "calculus": "module-calculus",
         "current": "module-current",
         "transfer": "module-transfer",
+        "xy": "module-xy",
         "correlation": "module-correlation",
         "calibration": "module-calibration",
         "cursor": "module-cursor",
@@ -1743,6 +1872,30 @@ def prepare_analysis_context(action_name=None):
 
     transfer_data = build_transfer_view(ch1, ch2, math_result, fs, time_axis, file_name)
 
+    if full_refresh or action_name == "xy" or "xy_data" not in session:
+        xy_data = build_xy_view(ch1, ch2, math_result)
+    else:
+        xy_data = session.get("xy_data", {})
+        settings = get_xy_settings()
+        xy_graph = _cache_get(GRAPH_CACHE, get_xy_graph_key(settings["x_channel"], settings["y_channel"]))
+        if xy_graph is None:
+            xy_data = build_xy_view(ch1, ch2, math_result)
+        else:
+            xy_data = {
+                "x_channel": settings["x_channel"],
+                "y_channel": settings["y_channel"],
+                "sample_count": xy_data.get("sample_count", 0),
+                "x_min": xy_data.get("x_min", 0.0),
+                "x_max": xy_data.get("x_max", 0.0),
+                "y_min": xy_data.get("y_min", 0.0),
+                "y_max": xy_data.get("y_max", 0.0),
+                "x_rms": xy_data.get("x_rms", 0.0),
+                "y_rms": xy_data.get("y_rms", 0.0),
+                "correlation_coefficient": xy_data.get("correlation_coefficient", 0.0),
+                "graph": xy_graph,
+                "enabled": bool(session.get("xy_enabled")),
+            }
+
     total_current_data = build_total_current_view(ch1, ch2, math_result, fs, time_axis, file_name)
 
     if full_refresh or action_name == "correlation" or "correlation_data" not in session:
@@ -1795,6 +1948,7 @@ def prepare_analysis_context(action_name=None):
         "calculus_data": calculus_data,
         "current_data": current_data,
         "transfer_data": transfer_data,
+        "xy_data": xy_data,
         "total_current_data": total_current_data,
         "correlation_data": correlation_data,
         "cursor_data": cursor_data,
@@ -1861,6 +2015,19 @@ def store_enabled_views(context):
             "delay_unit": context["transfer_data"].get("delay_unit", "s"),
             "delay_seconds": context["transfer_data"].get("delay_seconds", 0.0),
             "correlation_peak": context["transfer_data"].get("correlation_peak", 0.0),
+        }
+    if context["xy_data"]["enabled"]:
+        session["xy_data"] = {
+            "x_channel": context["xy_data"]["x_channel"],
+            "y_channel": context["xy_data"]["y_channel"],
+            "sample_count": context["xy_data"]["sample_count"],
+            "x_min": context["xy_data"]["x_min"],
+            "x_max": context["xy_data"]["x_max"],
+            "y_min": context["xy_data"]["y_min"],
+            "y_max": context["xy_data"]["y_max"],
+            "x_rms": context["xy_data"]["x_rms"],
+            "y_rms": context["xy_data"]["y_rms"],
+            "correlation_coefficient": context["xy_data"]["correlation_coefficient"],
         }
     if context["total_current_data"]["enabled"]:
         session["total_current_data"] = {
@@ -1957,6 +2124,8 @@ def main():
                     "current_settings": DEFAULT_CURRENT_SETTINGS.copy(),
                     "transfer_enabled": False,
                     "transfer_settings": DEFAULT_TRANSFER_SETTINGS.copy(),
+                    "xy_enabled": False,
+                    "xy_settings": DEFAULT_XY_SETTINGS.copy(),
                     "total_current_enabled": False,
                     "total_current_settings": DEFAULT_TOTAL_CURRENT_SETTINGS.copy(),
                     "correlation_enabled": False,
@@ -2063,6 +2232,19 @@ def main():
         toast_message = (
             f"Transfer analysis applied: {session['transfer_settings']['input_channel']} -> "
             f"{session['transfer_settings']['output_channel']}"
+        )
+        toast_variant = "success"
+
+    if request.method == "POST" and "xy_apply" in request.form:
+        action_name = "xy"
+        session["xy_enabled"] = True
+        session["xy_settings"] = {
+            "x_channel": request.form.get("xy_x_channel", "X"),
+            "y_channel": request.form.get("xy_y_channel", "Y"),
+        }
+        toast_message = (
+            f"X-Y mode applied: {session['xy_settings']['x_channel']} on X axis and "
+            f"{session['xy_settings']['y_channel']} on Y axis."
         )
         toast_variant = "success"
 
@@ -2214,6 +2396,7 @@ def main():
         calculus_data=context["calculus_data"],
         current_data=context["current_data"],
         transfer_data=context["transfer_data"],
+        xy_data=context["xy_data"],
         total_current_data=context["total_current_data"],
         correlation_data=context["correlation_data"],
         calibration_data=context["calibration_data"],
@@ -2538,6 +2721,42 @@ def download_correlation_graph():
     )
     cleanup_temp_download(png_path)
     return send_file(png_path, mimetype="image/png", as_attachment=True, download_name=f"{context['file_name']}_correlation.png")
+
+
+@app.route("/download_xy_graph")
+def download_xy_graph():
+    if not session.get("xy_enabled"):
+        return "Primero debes aplicar X-Y mode", 400
+    context = prepare_download_data("xy")
+    if not context:
+        return "No hay archivo cargado o el archivo es invalido", 400
+
+    settings = get_xy_settings()
+    signals = {
+        "X": np.asarray(context["ch1"], dtype=float),
+        "Y": np.asarray(context["ch2"], dtype=float),
+        "MATH": np.asarray(context["math_result"] if context["math_result"] is not None else np.array([]), dtype=float),
+    }
+    x_signal = signals.get(settings["x_channel"], signals["X"])
+    y_signal = signals.get(settings["y_channel"], signals["Y"])
+    length = min(x_signal.size, y_signal.size)
+    if length == 0:
+        return "No hay datos X-Y disponibles", 400
+
+    png_path = generate_xy_grafic_download(
+        x_signal[:length],
+        y_signal[:length],
+        f"X-Y Mode {settings['x_channel']} vs {settings['y_channel']}",
+        x_label=f"{settings['x_channel']} (V)",
+        y_label=f"{settings['y_channel']} (V)",
+    )
+    cleanup_temp_download(png_path)
+    return send_file(
+        png_path,
+        mimetype="image/png",
+        as_attachment=True,
+        download_name=f"{context['file_name']}_xy_{settings['x_channel']}_vs_{settings['y_channel']}.png",
+    )
 
 
 def run_flask_server(host="127.0.0.1", port=5000):

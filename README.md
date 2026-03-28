@@ -1,60 +1,67 @@
 # FNIRSI 1014D WAV Analyzer
 
-Powerful desktop tool to **analyze `.wav` files from the FNIRSI 1014D oscilloscope**.
+Desktop tool to analyze `.wav` files exported by the FNIRSI 1014D oscilloscope.
 
-This project allows you to **parse, reconstruct, visualize, and analyze waveform data** exported by the FNIRSI 1014D, including FFT, signal statistics, current analysis, power calculations, transfer functions, and more.
+This project parses FNIRSI captures, reconstructs the visible oscilloscope waveform, and adds engineering analysis modules such as MATH, X-Y mode, FFT, statistics, current and power estimation, transfer analysis, correlation, cursors, and cycle analysis.
 
-**Keywords:** fnirsi 1014d wav analyzer, oscilloscope waveform analysis, fnirsi data parser, signal processing, waveform fft analysis
+Keywords: fnirsi 1014d wav analyzer, oscilloscope waveform analysis, fnirsi data parser, signal processing, waveform fft analysis
 
 ---
 
-## Descripción (Español)
+## Description
 
-Herramienta de escritorio para **analizar archivos `.wav` exportados por el osciloscopio FNIRSI 1014D**.
+This application is aimed at oscilloscope post-processing rather than media playback. It decodes the internal FNIRSI file structure, rebuilds the visible waveform using `time/div`, trigger metadata, and scaling information, and exposes analysis modules through a desktop UI built with Flask and PyWebView.
 
-Permite reconstruir la señal tal como se muestra en el osciloscopio y realizar análisis avanzados como FFT, potencia AC, correlación, análisis de transferencia, corriente y estadísticas de señal.
+## Descripcion
+
+Herramienta de escritorio para analizar archivos `.wav` exportados por el osciloscopio FNIRSI 1014D.
+
+Permite reconstruir la senal tal como se muestra en el osciloscopio y realizar analisis avanzados como modo X-Y, FFT, potencia AC, correlacion, analisis de transferencia, corriente y estadisticas de senal.
 
 ---
 
 ## Features
 
-- Full **FNIRSI 1014D `.wav` file parsing**
-- Accurate **waveform reconstruction (oscilloscope-like display)**
-- **FFT spectrum analysis**
-- Advanced **signal statistics**
-- **Current and power analysis (AC)**
-- **Transfer function analysis (Vin / Vout)**
-- **Correlation and delay estimation**
-- **Derivative and integral analysis**
-- **Manual cursors and cycle analysis**
-- **LaTeX report export**
-- **PNG graph export**
+- Full FNIRSI 1014D `.wav` file parsing
+- Accurate waveform reconstruction with oscilloscope-like display
+- MATH operations on `X` and `Y`
+- X-Y mode for Lissajous-style inspection
+- FFT spectrum analysis
+- Signal statistics and advanced temporal metrics
+- Current and AC power analysis
+- Total current synthesis from saved current snapshots
+- Transfer function analysis (`Vin` / `Vout`)
+- Correlation and delay estimation
+- Derivative and integral analysis
+- Manual cursors and cycle analysis
+- LaTeX export
+- PNG graph export
 
 ---
 
-## 🧠 What This Tool Does
+## What This Tool Does
 
 Unlike simple waveform viewers, this tool:
 
-- Understands the **internal FNIRSI file structure**
+- Understands the internal FNIRSI file structure
 - Rebuilds the waveform using:
   - `time/div`
   - trigger metadata
   - scaling and probe factors
-- Provides **engineering-level signal analysis tools**
+- Provides engineering-oriented signal analysis tools
 
 ---
 
-## 🧩 Project Structure
+## Project Structure
 
 ```text
 .
-|-- app.py               # Main Flask app, routing, session state
+|-- app.py               # Main Flask app, routing, session state, orchestration
 |-- desktop.py           # Desktop entry point (pywebview)
 |-- file_analizer.py     # FNIRSI .wav parsing and metadata extraction
 |-- signal_analyzer.py   # Signal processing and analysis
 |-- plot_maker.py        # Plot generation (matplotlib)
-|-- report.py            # LaTeX report generation
+|-- report.py            # LaTeX report generation and download wrappers
 |-- templates/
 |   `-- main.html        # UI
 |-- static/
@@ -84,22 +91,30 @@ Unlike simple waveform viewers, this tool:
 ### 3. FFT
 
 - channel selection: `X`, `Y`, or `MATH`
-- linear/log magnitude scaling
+- linear or logarithmic magnitude scale
 - selectable window
 - dominant frequency
 - harmonic summary
 - THD estimate
 
-### 4. Statistics and advanced signal measures
+### 4. X-Y mode
+
+- choose the X-axis signal: `X`, `Y`, or `MATH`
+- choose the Y-axis signal: `X`, `Y`, or `MATH`
+- Lissajous-style sample-by-sample plot
+- summary with sample count, ranges, and correlation coefficient
+- PNG export of the X-Y graph
+
+### 5. Statistics and advanced signal measures
 
 - mean, variance, standard deviation, RMS, peak-to-peak
 - rise time, fall time, overshoot, undershoot, slew rate, crest factor
 
-### 5. Derivative and integral
+### 6. Derivative and integral
 
 - derivative and integral of `X`, `Y`, or `MATH`
 
-### 6. Current analysis
+### 7. Current analysis
 
 - resistor model: `i(t) = v(t) / R`
 - capacitor model: `i(t) = C dv(t) / dt`
@@ -113,14 +128,14 @@ Unlike simple waveform viewers, this tool:
   - complex power `P + jQ`
   - power factor
 
-### 7. Total current
+### 8. Total current
 
 - sum of saved current calculations from the current file
 - alignment against a selected voltage reference
 - total current graph
 - total AC power against selected voltage
 
-### 8. Transfer analysis
+### 9. Transfer analysis
 
 - choose `Vin` and `Vout` from `X`, `Y`, or `MATH`
 - phase shift between input and output
@@ -131,12 +146,12 @@ Unlike simple waveform viewers, this tool:
 - correlation peak
 - comparison graph
 
-### 9. Correlation
+### 10. Correlation
 
 - cross-correlation between `X` and `Y`
 - delay estimate
 
-### 10. Cursors and cycle analysis
+### 11. Cursors and cycle analysis
 
 - two manual time cursors with draggable overlay
 - cycle count, average frequency, average period, average Vpp, average RMS
@@ -206,8 +221,8 @@ iniciar.bat
 
 Desktop packaging files are already included:
 
-- [`app.spec`](/C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer/app.spec) for PyInstaller
-- [`installer.iss`](/C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer/installer.iss) for Inno Setup
+- [app.spec](C:\Users\rance\OneDrive\Documentos\fnirsi-1014d-oscilloscope-wav-analyzer\app.spec) for PyInstaller
+- [installer.iss](C:\Users\rance\OneDrive\Documentos\fnirsi-1014d-oscilloscope-wav-analyzer\installer.iss) for Inno Setup
 
 Typical build flow:
 
@@ -222,6 +237,7 @@ pyinstaller --clean --noconfirm app.spec
 - there is no automated test suite yet
 - some analysis modules still recompute data inside the request cycle instead of using a cleaner service layer
 - desktop and web concerns still live together in `app.py`
+- transfer analysis still lacks PNG graph download even though the panel and LaTeX summary exist
 - the environment in this workspace may contain an invalid or stale virtual environment path depending on the local machine setup
 
 ## Recommended Improvement Areas
@@ -240,6 +256,7 @@ Highest-value next steps:
    - `raw -> volts` conversion
    - current and power analysis
    - transfer analysis
+   - X-Y mode selection and graph generation
 
 3. Separate display signals from analysis signals more explicitly:
    - display path for oscilloscope-like visualization
@@ -248,12 +265,12 @@ Highest-value next steps:
 4. Replace session-heavy state with a clearer internal model for:
    - loaded file state
    - active modules
-   - cached graph/analysis artifacts
+   - cached graph and analysis artifacts
 
 5. Add validation fixtures:
    - real FNIRSI capture files
    - expected waveform screenshots
-   - reference values for phase, gain, current, and power
+   - reference values for phase, gain, current, power, and X-Y relationships
 
 6. Improve report/export coverage:
    - add graph download for transfer analysis
@@ -263,4 +280,4 @@ Highest-value next steps:
 
 This project is released under the MIT License.
 
-See [`LICENSE`](/C:/Users/rance/OneDrive/Desktop/osciloscope_fnirsi_1014d_analizer/LICENSE).
+See [LICENSE](C:\Users\rance\OneDrive\Documentos\fnirsi-1014d-oscilloscope-wav-analyzer\LICENSE).
