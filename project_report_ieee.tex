@@ -35,7 +35,7 @@
 \IEEEauthorblockN{Project Technical Report}
 \IEEEauthorblockA{
 Repository documentation for the project\\
-\texttt{osciloscope\_fnirsi\_1014d\_analizer}
+\texttt{fnirsi-1014d-oscilloscope-wav-analyzer}
 }
 }
 
@@ -54,7 +54,7 @@ oscilloscope, waveform reconstruction, signal processing, X-Y mode, FFT, current
 \section{Introduction}
 Low-cost digital oscilloscopes are widely used in education, prototyping, maintenance, and electronics laboratories. Although such instruments often provide basic automatic measurements, their local firmware interfaces are usually limited in flexibility, storage, and export-oriented post-processing. The FNIRSI 1014D exports waveform captures as binary \texttt{.wav} files that contain enough information to reconstruct both displayed channels and a relevant subset of the acquisition metadata. A software layer can therefore extend the utility of the instrument by rebuilding the visible traces, extracting measurements, and enabling additional analysis workflows not directly available on the oscilloscope.
 
-The present project implements that software layer as a desktop application. It is oriented toward engineering usage rather than generic media playback. The application parses the FNIRSI export structure, converts screen-domain samples into voltage-domain waveforms, aligns the visible window around the effective trigger reference, and provides a set of on-demand modules for numerical and graphical analysis. The software can run as a Python desktop application or as a packaged Windows executable.
+The present project implements that software layer as a desktop application. It is oriented toward engineering usage rather than generic media playback. The application parses the FNIRSI export structure, converts screen-domain samples into voltage-domain waveforms, aligns the visible window around the effective trigger reference, and provides a set of on-demand modules for numerical and graphical analysis. The software can run either in desktop mode through a local Flask backend embedded in PyWebView or in a server-only mode for local debugging, and it can also be packaged as a Windows executable.
 
 \section{Objectives}
 The current implementation is designed around the following goals:
@@ -87,8 +87,10 @@ At the time of this report, the application includes the following major capabil
     \item AC power computation for individual and total current,
     \item transfer analysis for $V_{\text{in}}$ and $V_{\text{out}}$,
     \item channel correlation,
+    \item calibration and normalization controls,
     \item manual cursor measurements,
     \item cycle analysis,
+    \item snapshot saving and comparison,
     \item PNG and LaTeX export,
     \item desktop execution through PyWebView,
     \item packaging through PyInstaller and Inno Setup.
@@ -105,8 +107,11 @@ The repository structure relevant to the current implementation is summarized in
 \toprule
 \textbf{File} & \textbf{Responsibility} \\
 \midrule
-\texttt{app.py} & Main Flask application, desktop bootstrap, upload handling, session state, AJAX fragments, analysis orchestration, exports, and desktop save integration. \\
+\texttt{app.py} & Main Flask application and desktop bootstrap entry point. \\
 \texttt{desktop.py} & Minimal desktop entry point that launches the application window. \\
+\texttt{web\_routes.py} & Route registration, form handling, AJAX fragment refreshes, download endpoints, and upload/reset actions. \\
+\texttt{analysis\_service.py} & Analysis orchestration, cached view building, module coordination, and snapshot/current synthesis helpers. \\
+\texttt{state\_store.py} & Shared defaults, in-memory state buckets, cache helpers, and application storage paths. \\
 \texttt{file\_analizer.py} & Binary parsing of FNIRSI files, extraction of configuration, trigger metadata, automatic measurements, and raw waveform blocks. \\
 \texttt{signal\_analyzer.py} & Core numerical processing: filtering, conversion, FFT support, statistics, advanced metrics, current estimation, AC power, transfer analysis, correlation, calibration, and cursor calculations. \\
 \texttt{plot\_maker.py} & Matplotlib plot generation for main waveform plots, X-Y plots, and analysis plots. \\
@@ -127,8 +132,8 @@ The application combines a Flask server with a PyWebView desktop window. In desk
 The implementation currently uses two main layers of state:
 
 \begin{itemize}
-    \item \textbf{Session state:} active settings and enabled modules are stored in the Flask session.
-    \item \textbf{In-memory caches:} numerical analysis results and generated graphs are stored in memory to reduce repeated computation.
+    \item \textbf{Client-scoped state buckets:} a Flask session identifier is used to address per-client state stored in an in-memory application dictionary, including active settings, enabled modules, and saved module outputs.
+    \item \textbf{In-memory caches:} numerical analysis results and generated graphs are cached in process memory to reduce repeated computation.
 \end{itemize}
 
 This design is effective for a single-user desktop workflow, although it also motivates future refactoring because \texttt{app.py} now concentrates a large portion of orchestration logic.
@@ -454,7 +459,7 @@ Q = V_{\mathrm{rms}} I_{\mathrm{rms}} \sin\phi
 \mathrm{pf} = \cos\phi = \frac{P}{S}
 \end{equation}
 
-These quantities are reported both for the individual current analysis and for the total current synthesis module.
+These quantities are reported both for the individual current analysis and for the total current synthesis module when a compatible voltage reference and saved current snapshots are available.
 
 \subsection{Total Current Synthesis}
 Saved current calculations from the current file can be resampled onto a common reference time axis and summed:
@@ -517,6 +522,12 @@ Current graphs display voltage and current together in a consistent style derive
 \subsection{Transfer Graph}
 The transfer graph overlays $V_{\mathrm{in}}$ and $V_{\mathrm{out}}$ using the same main-plot style so that attenuation and phase shift can be inspected directly.
 
+\subsection{Calibration Controls}
+The interface includes calibration controls for gain, offset, optional inversion per channel, and optional normalization. These controls are applied before downstream module views are refreshed so that the user can quickly inspect corrected traces without reloading the file.
+
+\subsection{Snapshots and Comparison}
+The interface also supports saving measurement snapshots and comparing the current file against a previously saved snapshot. The current comparison view emphasizes deltas in peak-to-peak voltage and decoded frequency for channels X and Y, which is useful for quick before/after checks during iterative lab work.
+
 \subsection{Loading Feedback}
 The current interface includes a centered loading overlay for slower operations. This was added to avoid the appearance of inactivity during server-side processing.
 
@@ -536,7 +547,7 @@ The most important strengths of the current implementation are:
 \begin{itemize}
     \item accurate visual reconstruction of the oscilloscope screen through trigger-centered cropping,
     \item broader feature set than the original oscilloscope firmware,
-    \item consistent analysis workflow across voltage, X-Y, current, power, and transfer modules,
+    \item consistent analysis workflow across voltage, X-Y, current, power, transfer, calibration, and comparison modules,
     \item desktop-friendly execution and download behavior,
     \item LaTeX export for report generation,
     \item packaging path already prepared for Windows distribution.
@@ -546,7 +557,7 @@ The most important strengths of the current implementation are:
 The current project also has several important limitations:
 
 \begin{itemize}
-    \item the codebase remains heavily centered in \texttt{app.py},
+    \item the codebase still carries legacy centralization pressure even after part of the routing and orchestration logic moved into \texttt{web\_routes.py}, \texttt{analysis\_service.py}, and \texttt{state\_store.py},
     \item the project does not yet include a formal automated test suite,
     \item some calculations still depend on filtered display-oriented signals rather than a fully separate analysis pipeline,
     \item the parser and reconstruction logic are specialized for the FNIRSI 1014D format,
@@ -710,7 +721,7 @@ Insert the corresponding application graph here.
 The highest-value future improvements are:
 
 \begin{itemize}
-    \item split \texttt{app.py} into route, state, desktop, and orchestration layers,
+    \item continue reducing orchestration coupling and keep consolidating route, state, desktop, and service responsibilities into clearer modules,
     \item add automated regression tests for parsing and numerical modules,
     \item formalize a dual-path strategy for display signals versus analysis signals,
     \item add graph download support for every remaining analysis panel, especially transfer analysis,

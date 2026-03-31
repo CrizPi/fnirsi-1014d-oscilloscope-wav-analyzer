@@ -1,192 +1,185 @@
-# FNIRSI 1014D WAV Analyzer
+# FNIRSI 1014D Analyzer
 
-Desktop tool to analyze `.wav` files exported by the FNIRSI 1014D oscilloscope.
+Desktop application for analyzing `.wav` captures exported by the FNIRSI 1014D oscilloscope.
 
-This project parses FNIRSI captures, reconstructs the visible oscilloscope waveform, and adds engineering analysis modules such as MATH, X-Y mode, FFT, statistics, current and power estimation, transfer analysis, correlation, cursors, and cycle analysis.
+The project decodes FNIRSI waveform files, reconstructs the visible oscilloscope trace, and exposes engineering analysis modules through a Flask + PyWebView desktop interface.
 
-Keywords: fnirsi 1014d wav analyzer, oscilloscope waveform analysis, fnirsi data parser, signal processing, waveform fft analysis
+## Overview
 
----
+This is not a media player for generic WAV audio. The tool is specialized for FNIRSI oscilloscope exports and focuses on post-processing, measurement review, graph generation, and report-oriented exports.
 
-## Description
+Current capabilities include:
 
-This application is aimed at oscilloscope post-processing rather than media playback. It decodes the internal FNIRSI file structure, rebuilds the visible waveform using `time/div`, trigger metadata, and scaling information, and exposes analysis modules through a desktop UI built with Flask and PyWebView.
-
-## Descripcion
-
-Herramienta de escritorio para analizar archivos `.wav` exportados por el osciloscopio FNIRSI 1014D.
-
-Permite reconstruir la senal tal como se muestra en el osciloscopio y realizar analisis avanzados como modo X-Y, FFT, potencia AC, correlacion, analisis de transferencia, corriente y estadisticas de senal.
-
----
-
-## Features
-
-- Full FNIRSI 1014D `.wav` file parsing
-- Accurate waveform reconstruction with oscilloscope-like display
+- full FNIRSI 1014D `.wav` parsing
+- trigger-aware waveform reconstruction
+- oscilloscope configuration and measurement decoding
 - MATH operations on `X` and `Y`
-- X-Y mode for Lissajous-style inspection
-- FFT spectrum analysis
-- Signal statistics and advanced temporal metrics
-- Current and AC power analysis
-- Total current synthesis from saved current snapshots
-- Transfer function analysis (`Vin` / `Vout`)
-- Correlation and delay estimation
-- Derivative and integral analysis
-- Manual cursors and cycle analysis
-- LaTeX export
-- PNG graph export
+- FFT analysis with selectable channel, window, and scale
+- statistics and advanced temporal metrics
+- derivative and integral analysis
+- current estimation for resistor, capacitor, and inductor models
+- total current synthesis from saved current snapshots
+- transfer analysis between `Vin` and `Vout`
+- X-Y mode
+- channel correlation and delay estimation
+- calibration and normalization controls
+- manual cursors with draggable markers
+- cycle analysis
+- snapshot saving and comparison
+- PNG graph downloads for supported modules
+- LaTeX export for analysis summaries
 
----
-
-## What This Tool Does
-
-Unlike simple waveform viewers, this tool:
-
-- Understands the internal FNIRSI file structure
-- Rebuilds the waveform using:
-  - `time/div`
-  - trigger metadata
-  - scaling and probe factors
-- Provides engineering-oriented signal analysis tools
-
----
-
-## Project Structure
+## Repository Structure
 
 ```text
 .
-|-- app.py               # Main Flask app, routing, session state, orchestration
-|-- desktop.py           # Desktop entry point (pywebview)
+|-- app.py               # Flask app and desktop launcher entry
+|-- desktop.py           # Minimal desktop bootstrap
+|-- web_routes.py        # HTTP routes, form handling, download endpoints
+|-- analysis_service.py  # Analysis orchestration, caching, module builders
+|-- state_store.py       # Shared app state, defaults, cache helpers
 |-- file_analizer.py     # FNIRSI .wav parsing and metadata extraction
-|-- signal_analyzer.py   # Signal processing and analysis
-|-- plot_maker.py        # Plot generation (matplotlib)
-|-- report.py            # LaTeX report generation and download wrappers
+|-- signal_analyzer.py   # Signal processing and engineering calculations
+|-- plot_maker.py        # Plot generation with matplotlib
+|-- report.py            # LaTeX export helpers
 |-- templates/
-|   `-- main.html        # UI
+|   `-- main.html        # Main UI
 |-- static/
 |   `-- style.css        # Styles
 |-- requirements.txt
-|-- app.spec             # PyInstaller config
-|-- installer.iss        # Windows installer script
-`-- iniciar.bat          # Setup helper
+|-- app.spec             # PyInstaller configuration
+|-- installer.iss        # Inno Setup installer script
+`-- iniciar.bat          # Local setup helper
 ```
 
-## Supported Analysis Modules
+## Analysis Modules
 
-### 1. Oscilloscope data view
+### Base oscilloscope view
 
-- `X` and `Y` waveform display
+- reconstructed `X` and `Y` traces
 - oscilloscope configuration table
-- oscilloscope measurements table
-- PNG export of the main graph
+- oscilloscope measurement table
+- PNG download of the main graph
 
-### 2. MATH
+### MATH
 
 - `X + Y`
 - `X - Y`
 - `X * Y`
 - `X / Y`
 
-### 3. FFT
+### FFT
 
 - channel selection: `X`, `Y`, or `MATH`
-- linear or logarithmic magnitude scale
-- selectable window
-- dominant frequency
+- amplitude scale: linear or logarithmic
+- selectable window: rectangular, Hann, Hamming, Blackman
+- dominant frequency and amplitude
+- top peaks
 - harmonic summary
 - THD estimate
 
-### 4. X-Y mode
+### Statistics and advanced metrics
 
-- choose the X-axis signal: `X`, `Y`, or `MATH`
-- choose the Y-axis signal: `X`, `Y`, or `MATH`
-- Lissajous-style sample-by-sample plot
-- summary with sample count, ranges, and correlation coefficient
-- PNG export of the X-Y graph
+- mean, median, variance, standard deviation
+- min, max, range, RMS, peak-to-peak
+- rise time, fall time, overshoot, undershoot
+- slew rate and crest factor
 
-### 5. Statistics and advanced signal measures
+### Derivative and integral
 
-- mean, variance, standard deviation, RMS, peak-to-peak
-- rise time, fall time, overshoot, undershoot, slew rate, crest factor
+- derivative of `X`, `Y`, or `MATH`
+- integral of `X`, `Y`, or `MATH`
+- PNG download for both plots
 
-### 6. Derivative and integral
-
-- derivative and integral of `X`, `Y`, or `MATH`
-
-### 7. Current analysis
+### Current analysis
 
 - resistor model: `i(t) = v(t) / R`
 - capacitor model: `i(t) = C dv(t) / dt`
 - inductor model: `i(t) = (1/L) integral(v) dt`
-- current waveform graph
-- RMS, mean, peak, phase
-- AC power:
-  - apparent power `S`
-  - active power `P`
-  - reactive power `Q`
-  - complex power `P + jQ`
-  - power factor
+- selectable inductor initial condition
+- RMS, mean, peak, phase, and power quantities
+- current snapshot saving
 
-### 8. Total current
+### Total current
 
-- sum of saved current calculations from the current file
-- alignment against a selected voltage reference
-- total current graph
-- total AC power against selected voltage
+- sum of saved current snapshots from the current file
+- alignment against a selected voltage channel
+- frequency compatibility filtering
+- total current and AC power summary
 
-### 9. Transfer analysis
+### Transfer analysis
 
 - choose `Vin` and `Vout` from `X`, `Y`, or `MATH`
-- phase shift between input and output
-- `Vout/Vin` ratio using RMS
-- `Vout/Vin` ratio using peak-to-peak
+- RMS and peak-to-peak gain
 - gain in dB
+- phase shift
 - equivalent delay
-- correlation peak
-- comparison graph
+- normalized correlation peak
 
-### 10. Correlation
+### X-Y mode
+
+- choose the X-axis and Y-axis signals from `X`, `Y`, or `MATH`
+- Lissajous-style waveform view
+- sample count, ranges, RMS values, and correlation coefficient
+- PNG download of the X-Y graph
+
+### Correlation
 
 - cross-correlation between `X` and `Y`
 - delay estimate
+- PNG and LaTeX export
 
-### 11. Cursors and cycle analysis
+### Calibration
 
-- two manual time cursors with draggable overlay
+- gain and offset for both channels
+- optional inversion per channel
+- optional normalization
+
+### Cursors and cycle analysis
+
+- manual time cursors with draggable overlay
+- `t1`, `t2`, `V1`, `V2`, `delta t`, `delta V`
+- estimated frequency from cursor distance
 - cycle count, average frequency, average period, average Vpp, average RMS
 
-## Oscilloscope File Handling
+### Snapshots and comparison
+
+- save measurement snapshots from the active file
+- compare the current file against a saved snapshot
+- delta Vpp and delta frequency summary
+
+## File Decoding and Reconstruction
 
 The parser currently reads:
 
 - channel voltage scale
 - probe factor
-- coupling
+- coupling mode
 - `time/div`
 - trigger type
 - trigger edge
 - trigger channel
-- trigger 50%
-- oscilloscope measurements
-- visible waveform data and full waveform blocks
+- trigger 50% flag
+- automatic oscilloscope measurements
+- visible waveform block
+- full raw waveform block
 
-The current display pipeline is tuned to match the waveform as shown on the oscilloscope screen:
+The visible waveform pipeline is tuned to match the oscilloscope screen as closely as possible:
 
-- visible waveform data is converted to volts using the oscilloscope measures
-- trigger metadata is used to locate the visible window
-- the displayed window is cropped symmetrically around the detected trigger reference
-- the time axis is rebuilt using the oscilloscope `time/div`
+- raw visible samples are mapped into volts using decoded measurements
+- trigger metadata is used to locate the visible reference
+- the window is cropped around the trigger-centered region
+- the time axis is rebuilt from the oscilloscope `time/div`
 
-## Run the Project
+## Running the Project
 
-### Option 1: Desktop mode
+### Desktop mode
 
 ```powershell
 python app.py
 ```
 
-By default the project runs in desktop mode and opens a `pywebview` window.
+By default, `app.py` launches the local Flask backend and opens a native `pywebview` window.
 
 You can also use:
 
@@ -194,16 +187,16 @@ You can also use:
 python desktop.py
 ```
 
-### Option 2: Server mode
+### Server-only mode
 
 ```powershell
 $env:FNIRSI_APP_MODE="server"
 python app.py
 ```
 
-This starts only the Flask server.
+This starts only the local Flask server on `127.0.0.1:5000`.
 
-## Install Dependencies
+## Installing Dependencies
 
 ```powershell
 python -m venv venv
@@ -219,7 +212,7 @@ iniciar.bat
 
 ## Packaging
 
-Desktop packaging files are already included:
+Build support files are already included:
 
 - [app.spec](C:\Users\rance\OneDrive\Documentos\fnirsi-1014d-oscilloscope-wav-analyzer\app.spec) for PyInstaller
 - [installer.iss](C:\Users\rance\OneDrive\Documentos\fnirsi-1014d-oscilloscope-wav-analyzer\installer.iss) for Inno Setup
@@ -231,50 +224,22 @@ pip install pyinstaller
 pyinstaller --clean --noconfirm app.spec
 ```
 
-## Known Limitations
+## Current Limitations
 
-- the project depends heavily on session state inside `app.py`; the app works, but the codebase is not yet strongly modularized
+- the project is still centered around orchestration code that would benefit from further modularization
 - there is no automated test suite yet
-- some analysis modules still recompute data inside the request cycle instead of using a cleaner service layer
-- desktop and web concerns still live together in `app.py`
-- transfer analysis still lacks PNG graph download even though the panel and LaTeX summary exist
-- the environment in this workspace may contain an invalid or stale virtual environment path depending on the local machine setup
+- some modules still share logic between display-oriented and analysis-oriented signal paths
+- the parser is specialized for the FNIRSI 1014D file format
+- transfer analysis currently exposes LaTeX export but does not yet have its own PNG download route
+- local Python environments may need to be recreated on another machine before building
 
-## Recommended Improvement Areas
+## Recommended Next Steps
 
-Highest-value next steps:
-
-1. Split `app.py` into smaller modules:
-   - routes
-   - state/session helpers
-   - analysis orchestration
-   - desktop launcher
-
-2. Add automated tests for:
-   - `.wav` parsing
-   - trigger/window reconstruction
-   - `raw -> volts` conversion
-   - current and power analysis
-   - transfer analysis
-   - X-Y mode selection and graph generation
-
-3. Separate display signals from analysis signals more explicitly:
-   - display path for oscilloscope-like visualization
-   - analysis path for measurements sensitive to filtering or differentiation
-
-4. Replace session-heavy state with a clearer internal model for:
-   - loaded file state
-   - active modules
-   - cached graph and analysis artifacts
-
-5. Add validation fixtures:
-   - real FNIRSI capture files
-   - expected waveform screenshots
-   - reference values for phase, gain, current, power, and X-Y relationships
-
-6. Improve report/export coverage:
-   - add graph download for transfer analysis
-   - optionally generate a full multi-section report document
+1. Continue splitting orchestration responsibilities across clearer route, state, and service layers.
+2. Add automated tests for parsing, reconstruction, and numerical analysis modules.
+3. Build validation fixtures from real FNIRSI captures with expected reference values.
+4. Separate display-focused signals from analysis-focused signals more explicitly.
+5. Extend export coverage to any remaining modules without graph downloads.
 
 ## License
 
