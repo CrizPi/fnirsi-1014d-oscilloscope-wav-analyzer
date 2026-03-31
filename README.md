@@ -224,23 +224,6 @@ pip install pyinstaller
 pyinstaller --clean --noconfirm app.spec
 ```
 
-## Current Limitations
-
-- the project is still centered around orchestration code that would benefit from further modularization
-- there is no automated test suite yet
-- some modules still share logic between display-oriented and analysis-oriented signal paths
-- the parser is specialized for the FNIRSI 1014D file format
-- transfer analysis currently exposes LaTeX export but does not yet have its own PNG download route
-- local Python environments may need to be recreated on another machine before building
-
-## Recommended Next Steps
-
-1. Continue splitting orchestration responsibilities across clearer route, state, and service layers.
-2. Add automated tests for parsing, reconstruction, and numerical analysis modules.
-3. Build validation fixtures from real FNIRSI captures with expected reference values.
-4. Separate display-focused signals from analysis-focused signals more explicitly.
-5. Extend export coverage to any remaining modules without graph downloads.
-
 ## License
 
 This project is released under the MIT License.
