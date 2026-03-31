@@ -65,6 +65,10 @@ from state_store import (
     state_set,
 )
 
+EMPTY_PLOT_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="
+)
+
 
 def parse_uploaded_scope_file(file_path):
     return get_scope_config(file_path), get_scope_measures(file_path)
@@ -1282,16 +1286,41 @@ def get_fft_download_data(ch1, ch2, math_result, fs):
 def build_empty_view(error_message=None, toast_message=None, toast_variant="success"):
     empty_stats = calculate_signal_statistics(np.array([]))
     empty_advanced = calculate_advanced_measures(np.array([]), 0)
+    use_lightweight_empty_graphs = os.getenv("FNIRSI_APP_MODE", "desktop").lower() == "server"
+
+    if use_lightweight_empty_graphs:
+        main_graph = EMPTY_PLOT_BASE64
+        math_graph = EMPTY_PLOT_BASE64
+        fft_graph = EMPTY_PLOT_BASE64
+        derivative_graph = EMPTY_PLOT_BASE64
+        integral_graph = EMPTY_PLOT_BASE64
+        current_graph = EMPTY_PLOT_BASE64
+        transfer_graph = EMPTY_PLOT_BASE64
+        xy_graph = EMPTY_PLOT_BASE64
+        total_current_graph = EMPTY_PLOT_BASE64
+        correlation_graph = EMPTY_PLOT_BASE64
+    else:
+        main_graph = generate_grafic(T_CLEAR, CH_CLEAR, CH_CLEAR, "No File", DEFAULT_MEASURES)
+        math_graph = generate_grafic(T_CLEAR, [], [], "MATH", math_result=None, show_empty=True)
+        fft_graph = generate_fft_grafic([], [], "", "X")
+        derivative_graph = generate_signal_analysis_grafic([], [], "Derivative X", "dV/dt (V/s)")
+        integral_graph = generate_signal_analysis_grafic([], [], "Integral X", "Integral (V*s)")
+        current_graph = generate_voltage_current_grafic([], [], [], "Current Analysis")
+        transfer_graph = generate_grafic([], [], [], "Transfer Analysis", show_empty=True)
+        xy_graph = generate_xy_mode_grafic([], [], "X-Y Mode", "X (V)", "Y (V)")
+        total_current_graph = generate_voltage_current_grafic([], [], [], "Total Current Analysis")
+        correlation_graph = generate_correlation_grafic([], [], "Correlation")
+
     return {
         "file": None,
         "file_name": "No File",
         "config": DEFAULT_CONFIG,
         "measures": DEFAULT_MEASURES,
-        "grafica": generate_grafic(T_CLEAR, CH_CLEAR, CH_CLEAR, "No File", DEFAULT_MEASURES),
-        "grafica_math": generate_grafic(T_CLEAR, [], [], "MATH", math_result=None, show_empty=True),
+        "grafica": main_graph,
+        "grafica_math": math_graph,
         "math_operation": None,
         "math_measures": DEFAULT_MATH_MEASURES.copy(),
-        "fft_graph": generate_fft_grafic([], [], "", "X"),
+        "fft_graph": fft_graph,
         "fft_data": {
             "channel": "X",
             "scale": "linear",
@@ -1312,8 +1341,8 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "enabled": False,
             "derivative_peak": 0.0,
             "integral_final": 0.0,
-            "derivative_graph": generate_signal_analysis_grafic([], [], "Derivative X", "dV/dt (V/s)"),
-            "integral_graph": generate_signal_analysis_grafic([], [], "Integral X", "Integral (V*s)"),
+            "derivative_graph": derivative_graph,
+            "integral_graph": integral_graph,
         },
         "current_data": {
             "channel": "X",
@@ -1338,7 +1367,7 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "inductor_initial_value_input": "0",
             "warnings": [],
             "current": np.array([]),
-            "graph": generate_voltage_current_grafic([], [], [], "Current Analysis"),
+            "graph": current_graph,
             "enabled": False,
         },
         "transfer_data": {
@@ -1357,7 +1386,7 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "delay_unit": "s",
             "delay_seconds": 0.0,
             "correlation_peak": 0.0,
-            "graph": generate_grafic([], [], [], "Transfer Analysis", show_empty=True),
+            "graph": transfer_graph,
             "enabled": False,
         },
         "xy_data": {
@@ -1371,7 +1400,7 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "x_rms": 0.0,
             "y_rms": 0.0,
             "correlation_coefficient": 0.0,
-            "graph": generate_xy_mode_grafic([], [], "X-Y Mode", "X (V)", "Y (V)"),
+            "graph": xy_graph,
             "enabled": False,
         },
         "total_current_data": {
@@ -1397,14 +1426,14 @@ def build_empty_view(error_message=None, toast_message=None, toast_variant="succ
             "complex_power_imag_var": 0.0,
             "series_mismatch_rms": 0.0,
             "warnings": [],
-            "graph": generate_voltage_current_grafic([], [], [], "Total Current Analysis"),
+            "graph": total_current_graph,
         },
         "correlation_data": {
             "enabled": False,
             "max_correlation": 0.0,
             "delay_value": 0.0,
             "delay_unit": "s",
-            "graph": generate_correlation_grafic([], [], "Correlation"),
+            "graph": correlation_graph,
         },
         "calibration_data": build_calibration_view(),
         "cursor_data": {

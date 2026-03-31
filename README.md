@@ -216,7 +216,7 @@ Recommended Render setup:
 
 ```text
 Build command: pip install -r requirements.txt
-Start command: gunicorn app:app
+Start command: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 app:app
 ```
 
 Important notes for the web deployment:
@@ -232,6 +232,8 @@ If you want stricter production behavior, set these environment variables in Ren
 - `FNIRSI_APP_MODE=server`
 - `FNIRSI_SERVER_HOST=0.0.0.0`
 - `MPLBACKEND=Agg`
+- `MPLCONFIGDIR=/tmp/matplotlib`
+- `FNIRSI_APP_DATA_DIR=/tmp/fnirsi-1014d-analyzer`
 - `FLASK_SECRET_KEY=<your-random-secret>`
 
 ## Installing Dependencies
