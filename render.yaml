@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: fnirsi-1014d-oscilloscope-wav-analyzer
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: FNIRSI_APP_MODE
+        value: server
+      - key: FNIRSI_SERVER_HOST
+        value: 0.0.0.0
+      - key: MPLBACKEND
+        value: Agg

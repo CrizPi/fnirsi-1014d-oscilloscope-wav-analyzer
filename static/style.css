@@ -42,7 +42,7 @@ body {
 
 .loading-card {
     min-width: 240px;
-    padding: 22px 24px;
+    padding: 11px 12px;
     border-radius: 18px;
     border: 1px solid rgba(242, 227, 15, 0.25);
     background: rgba(16, 18, 20, 0.96);

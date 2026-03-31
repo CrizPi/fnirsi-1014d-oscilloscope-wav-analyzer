@@ -1,5 +1,6 @@
 import atexit
 import os
+import tempfile
 import uuid
 from threading import Lock
 
@@ -9,7 +10,8 @@ from flask import session
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_NAME = "FNIRSI 1014D Analyzer"
-APP_DATA_DIR = os.path.join(os.getenv("LOCALAPPDATA", BASE_DIR), "FNIRSI1014DAnalyzer")
+DEFAULT_APP_DATA_ROOT = os.getenv("LOCALAPPDATA") or tempfile.gettempdir()
+APP_DATA_DIR = os.getenv("FNIRSI_APP_DATA_DIR", os.path.join(DEFAULT_APP_DATA_ROOT, "FNIRSI1014DAnalyzer"))
 UPLOAD_FOLDER = os.path.join(APP_DATA_DIR, "uploads")
 SECRET_KEY_PATH = os.path.join(APP_DATA_DIR, "flask_secret.key")
 os.makedirs(APP_DATA_DIR, exist_ok=True)
