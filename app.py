@@ -5,24 +5,21 @@ import time
 from threading import Thread
 
 from flask import Flask
+import webview
 
 from state_store import APP_NAME, BASE_DIR, cleanup_upload_folder, load_or_create_secret_key
 from web_routes import register_routes
 
 
-def create_app():
-    flask_app = Flask(
-        __name__,
-        template_folder=os.path.join(BASE_DIR, "templates"),
-        static_folder=os.path.join(BASE_DIR, "static"),
-    )
-    flask_app.secret_key = load_or_create_secret_key()
-    flask_app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
-    register_routes(flask_app)
-    return flask_app
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "static"),
+)
+app.secret_key = load_or_create_secret_key()
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
-
-app = create_app()
+register_routes(app)
 
 MAIN_WINDOW = None
 
@@ -33,8 +30,6 @@ class DesktopApi:
             return {"ok": False, "message": "Desktop window is not available."}
 
         try:
-            import webview
-
             save_dialog = getattr(getattr(webview, "FileDialog", None), "SAVE", None)
             if save_dialog is None:
                 save_dialog = webview.SAVE_DIALOG
@@ -54,17 +49,7 @@ class DesktopApi:
             return {"ok": False, "message": f"Download failed: {exc}"}
 
 
-def get_server_host():
-    return os.getenv("FNIRSI_SERVER_HOST") or os.getenv("HOST") or "127.0.0.1"
-
-
-def get_server_port():
-    return int(os.getenv("PORT", os.getenv("FNIRSI_SERVER_PORT", "5000")))
-
-
-def run_flask_server(host=None, port=None):
-    host = host or get_server_host()
-    port = port or get_server_port()
+def run_flask_server(host="127.0.0.1", port=5000):
     app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
 
 
@@ -81,8 +66,6 @@ def wait_for_server(host="127.0.0.1", port=5000, timeout_seconds=10):
 
 def launch_desktop(host="127.0.0.1", port=5000, width=1200, height=800):
     global MAIN_WINDOW
-    import webview
-
     desktop_api = DesktopApi()
 
     flask_thread = Thread(target=run_flask_server, kwargs={"host": host, "port": port}, daemon=True)
@@ -110,6 +93,6 @@ def launch_desktop(host="127.0.0.1", port=5000, width=1200, height=800):
 if __name__ == "__main__":
     mode = os.getenv("FNIRSI_APP_MODE", "desktop").lower()
     if mode == "server":
-        run_flask_server(host=get_server_host(), port=get_server_port())
+        run_flask_server()
     else:
         launch_desktop()

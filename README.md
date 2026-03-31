@@ -196,46 +196,6 @@ python app.py
 
 This starts only the local Flask server on `127.0.0.1:5000`.
 
-Environment variables available for server mode:
-
-- `FNIRSI_SERVER_HOST`: host interface for Flask, for example `0.0.0.0`
-- `FNIRSI_SERVER_PORT`: port override for local runs
-- `PORT`: automatically honored for Render and other platforms
-- `FNIRSI_APP_DATA_DIR`: optional directory for temporary uploads and generated secret key
-
-### Render deployment
-
-The repository now includes [render.yaml](C:\Users\rance\OneDrive\Documentos\fnirsi-1014d-oscilloscope-wav-analyzer\render.yaml) so the web version can be deployed without affecting the desktop executable.
-
-Recommended Render setup:
-
-1. Push the repository to GitHub.
-2. In Render, create a new `Web Service` from the repository.
-3. Keep the detected Python environment.
-4. Use the included Blueprint or these equivalent commands:
-
-```text
-Build command: pip install -r requirements.txt
-Start command: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 app:app
-```
-
-Important notes for the web deployment:
-
-- the desktop launcher is bypassed because Render starts the Flask `app` object directly
-- `pywebview` stays available for the Windows executable, but it is no longer imported at server startup
-- uploaded `.wav` files are stored in temporary local storage on the Render instance
-- the in-memory session state is per running instance, so this deployment is good for single-instance usage but is not yet designed for horizontal scaling
-- Render disk is ephemeral unless you attach a persistent disk, so uploaded captures and runtime state should be treated as temporary
-
-If you want stricter production behavior, set these environment variables in Render:
-
-- `FNIRSI_APP_MODE=server`
-- `FNIRSI_SERVER_HOST=0.0.0.0`
-- `MPLBACKEND=Agg`
-- `MPLCONFIGDIR=/tmp/matplotlib`
-- `FNIRSI_APP_DATA_DIR=/tmp/fnirsi-1014d-analyzer`
-- `FLASK_SECRET_KEY=<your-random-secret>`
-
 ## Installing Dependencies
 
 ```powershell
