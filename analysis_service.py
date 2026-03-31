@@ -395,7 +395,7 @@ def build_advanced_view(ch1, ch2, math_result, fs):
 def build_fft_view(ch1, ch2, math_result, fs, file_name):
     settings = get_fft_settings()
     if not state_get("fft_enabled"):
-        return generate_fft_grafic([], [], "", settings["channel"]), {
+        return EMPTY_PLOT_BASE64, {
             "channel": settings["channel"],
             "scale": settings["scale"],
             "max_frequency": settings["max_frequency"],
@@ -466,8 +466,8 @@ def build_calculus_view(ch1, ch2, math_result, fs, time_axis, file_name):
             "integral_final": 0.0,
             "derivative": np.array([]),
             "integral": np.array([]),
-            "derivative_graph": generate_signal_analysis_grafic([], [], f"Derivative {selected_channel}", "dV/dt (V/s)"),
-            "integral_graph": generate_signal_analysis_grafic([], [], f"Integral {selected_channel}", "Integral (V*s)"),
+            "derivative_graph": EMPTY_PLOT_BASE64,
+            "integral_graph": EMPTY_PLOT_BASE64,
         }
 
     cache_key = (
@@ -533,7 +533,7 @@ def build_current_view(ch1, ch2, math_result, ch1_visual, ch2_visual, math_resul
         "inductor_initial_value_input": settings["inductor_initial_value"],
         "warnings": [],
         "current": np.array([]),
-        "graph": generate_voltage_current_grafic([], [], [], "Current Analysis"),
+        "graph": EMPTY_PLOT_BASE64,
         "enabled": False,
     }
     if not state_get("current_enabled"):
@@ -763,7 +763,7 @@ def build_total_current_view(ch1, ch2, math_result, ch1_visual, ch2_visual, math
         "complex_power_imag_var": 0.0,
         "series_mismatch_rms": 0.0,
         "warnings": [],
-        "graph": generate_voltage_current_grafic([], [], [], "Total Current Analysis"),
+        "graph": EMPTY_PLOT_BASE64,
     }
     if not state_get("total_current_enabled"):
         return empty
@@ -896,7 +896,7 @@ def build_correlation_view(ch1, ch2, fs, file_name):
             "delay_value": 0.0,
             "delay_unit": "s",
             "enabled": False,
-            "graph": generate_correlation_grafic([], [], "Correlation"),
+            "graph": EMPTY_PLOT_BASE64,
         }
 
     cache_key = ("correlation", state_get("file_wav"), freeze_value(get_calibration_settings()))
@@ -938,7 +938,7 @@ def build_transfer_view(ch1, ch2, math_result, ch1_visual, ch2_visual, math_resu
         "delay_unit": "s",
         "delay_seconds": 0.0,
         "correlation_peak": 0.0,
-        "graph": generate_grafic([], [], [], "Transfer Analysis", show_empty=True),
+        "graph": EMPTY_PLOT_BASE64,
         "enabled": False,
     }
     if not state_get("transfer_enabled"):
@@ -996,7 +996,7 @@ def build_xy_view(ch1, ch2, math_result, ch1_visual, ch2_visual, math_result_vis
         "x_rms": 0.0,
         "y_rms": 0.0,
         "correlation_coefficient": 0.0,
-        "graph": generate_xy_mode_grafic([], [], "X-Y Mode", f"{settings['x_channel']} (V)", f"{settings['y_channel']} (V)"),
+        "graph": EMPTY_PLOT_BASE64,
         "enabled": False,
     }
     if not state_get("xy_enabled"):

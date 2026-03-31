@@ -109,7 +109,11 @@
             </tbody>
         </table>
 
+        {% if file %}
         <div class="graph-frame"><img src="data:image/png;base64,{{ grafica }}" alt="Main graph"></div>
+        {% else %}
+        <div class="empty-graph-state">Upload a `.wav` capture to render the oscilloscope graph.</div>
+        {% endif %}
         <form class="download" action="{{ url_for('download_graph') }}" method="get">
             <span>Download PNG graph</span>
             <button class="svg" type="submit" {% if not file %}disabled{% endif %}>
@@ -172,7 +176,11 @@
                     <tr><td>Duty-</td><td>{{ math_measures['Duty-'] }} %</td></tr>
                 </tbody>
             </table>
+            {% if math_operation %}
             <div class="graph-frame"><img src="data:image/png;base64,{{ grafica_math }}" alt="MATH graph"></div>
+            {% else %}
+            <div class="empty-graph-state">Apply a MATH operation to generate this graph.</div>
+            {% endif %}
             <form class="download" action="{{ url_for('download_math_graph') }}" method="get">
                 <span>Download MATH graph</span>
                 <button class="svg" type="submit" {% if not file or not math_operation %}disabled{% endif %}>
@@ -257,7 +265,11 @@
                     </table>
                 </div>
             </div>
+            {% if fft_data.enabled %}
             <div class="graph-frame"><img src="data:image/png;base64,{{ fft_graph }}" alt="FFT graph"></div>
+            {% else %}
+            <div class="empty-graph-state">Apply FFT to generate the spectrum graph.</div>
+            {% endif %}
             <form class="download" action="{{ url_for('download_fft_graph') }}" method="get">
                 <span>Download FFT graph</span>
                 <button class="svg" type="submit" {% if not file or not fft_data.enabled %}disabled{% endif %}>
@@ -335,7 +347,11 @@
                 <div class="fft-card"><span>Max correlation</span><strong>{{ correlation_data.max_correlation }}</strong></div>
                 <div class="fft-card"><span>Delay</span><strong>{{ correlation_data.delay_value }} {{ correlation_data.delay_unit }}</strong></div>
             </div>
+            {% if correlation_data.enabled %}
             <div class="graph-frame"><img src="data:image/png;base64,{{ correlation_data.graph }}" alt="Correlation graph"></div>
+            {% else %}
+            <div class="empty-graph-state">Apply correlation to view the delay graph.</div>
+            {% endif %}
             <form class="download" action="{{ url_for('download_correlation_graph') }}" method="get">
                 <span>Download correlation graph</span>
                 <button class="svg" type="submit" {% if not file or not correlation_data.enabled %}disabled{% endif %}>
@@ -363,9 +379,15 @@
                 <div class="fft-card"><span>Derivative peak</span><strong>{{ calculus_data.derivative_peak }}</strong></div>
                 <div class="fft-card"><span>Final integral</span><strong>{{ calculus_data.integral_final }}</strong></div>
             </div>
+            {% if calculus_data.enabled %}
             <div class="graph-frame"><img src="data:image/png;base64,{{ calculus_data.derivative_graph }}" alt="Derivative graph"></div>
+            {% else %}
+            <div class="empty-graph-state">Apply derivative/integral to generate the analysis graphs.</div>
+            {% endif %}
             <form class="download" action="{{ url_for('download_derivative_graph') }}" method="get"><span>Download derivative</span><button class="svg" type="submit" {% if not file or not calculus_data.enabled %}disabled{% endif %}><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg></button></form>
+            {% if calculus_data.enabled %}
             <div class="graph-frame"><img src="data:image/png;base64,{{ calculus_data.integral_graph }}" alt="Integral graph"></div>
+            {% endif %}
             <form class="download" action="{{ url_for('download_integral_graph') }}" method="get"><span>Download integral</span><button class="svg" type="submit" {% if not file or not calculus_data.enabled %}disabled{% endif %}><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg></button></form>
         </div>
         <!-- FRAGMENT:module-calculus:end -->
@@ -433,7 +455,11 @@
                 {% endfor %}
             </div>
             {% endif %}
+            {% if current_data.enabled %}
             <div class="graph-frame"><img src="data:image/png;base64,{{ current_data.graph }}" alt="Voltage and current graph"></div>
+            {% else %}
+            <div class="empty-graph-state">Apply current analysis to render the current waveform.</div>
+            {% endif %}
             <form class="download" action="{{ url_for('download_current_graph') }}" method="get">
                 <span>Download current graph</span>
                 <button class="svg" type="submit" {% if not file or not current_data.enabled %}disabled{% endif %}>
@@ -510,7 +536,11 @@
                 {% endfor %}
             </div>
             {% endif %}
+            {% if total_current_data.enabled %}
             <div class="graph-frame"><img src="data:image/png;base64,{{ total_current_data.graph }}" alt="Total current graph"></div>
+            {% else %}
+            <div class="empty-graph-state">Save current snapshots and apply total current to render this graph.</div>
+            {% endif %}
             <form class="download" action="{{ url_for('download_total_current_graph') }}" method="get">
                 <span>Download total current graph</span>
                 <button class="svg" type="submit" {% if not file or not total_current_data.enabled %}disabled{% endif %}>
@@ -562,7 +592,11 @@
                 <div class="fft-card"><span>Correlation peak</span><strong>{{ transfer_data.correlation_peak }}</strong></div>
             </div>
             <p class="section-note">Use this section to compare an input signal against an output signal from the same capture. It is useful for RC/RL transfer analysis, attenuation and phase shift.</p>
+            {% if transfer_data.enabled %}
             <div class="graph-frame"><img src="data:image/png;base64,{{ transfer_data.graph }}" alt="Transfer analysis graph"></div>
+            {% else %}
+            <div class="empty-graph-state">Apply transfer analysis to compare Vin and Vout.</div>
+            {% endif %}
         </div>
         <!-- FRAGMENT:module-transfer:end -->
 
@@ -596,7 +630,11 @@
                 <div class="fft-card"><span>Y range</span><strong>{{ xy_data.y_min }} to {{ xy_data.y_max }} V</strong></div>
                 <div class="fft-card"><span>Correlation</span><strong>{{ xy_data.correlation_coefficient }}</strong></div>
             </div>
+            {% if xy_data.enabled %}
             <div class="graph-frame"><img src="data:image/png;base64,{{ xy_data.graph }}" alt="X-Y graph"></div>
+            {% else %}
+            <div class="empty-graph-state">Apply X-Y mode to generate the Lissajous graph.</div>
+            {% endif %}
             <form class="download" action="{{ url_for('download_xy_graph') }}" method="get">
                 <span>Download X-Y graph</span>
                 <button class="svg" type="submit" {% if not file or not xy_data.enabled %}disabled{% endif %}>
