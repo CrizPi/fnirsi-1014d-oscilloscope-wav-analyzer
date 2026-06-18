@@ -1,8 +1,8 @@
 # FNIRSI 1014D Analyzer
 
-Desktop application for analyzing `.wav` captures exported by the FNIRSI 1014D oscilloscope.
+Desktop application for analyzing `.wav` captures exported by the FNIRSI 1014D oscilloscope. Decodes FNIRSI waveform files, reconstructs the visible oscilloscope trace, and exposes engineering analysis modules through a Flask + PyWebView desktop interface.
 
-The project decodes FNIRSI waveform files, reconstructs the visible oscilloscope trace, and exposes engineering analysis modules through a Flask + PyWebView desktop interface.
+**Version:** 2.0.1
 
 ## Overview
 
@@ -10,46 +10,62 @@ This is not a media player for generic WAV audio. The tool is specialized for FN
 
 Current capabilities include:
 
-- full FNIRSI 1014D `.wav` parsing
-- trigger-aware waveform reconstruction
+- FNIRSI 1014D `.wav` parsing with trigger-aware waveform reconstruction
 - oscilloscope configuration and measurement decoding
 - MATH operations on `X` and `Y`
 - FFT analysis with selectable channel, window, and scale
 - statistics and advanced temporal metrics
-- derivative and integral analysis
+- derivative and integral analysis (calculus)
 - current estimation for resistor, capacitor, and inductor models
 - total current synthesis from saved current snapshots
 - transfer analysis between `Vin` and `Vout`
 - X-Y mode
 - channel correlation and delay estimation
 - calibration and normalization controls
-- manual cursors with draggable markers
+- manual cursors with draggable markers (single and dual mode)
 - cycle analysis
+- digital signal analysis (PWM, pulse counting, edge detection, logic levels)
 - snapshot saving and comparison
+- project save/load (persist and restore full analysis state)
+- SVG graph download
+- CSV export (signals, measurements, FFT)
+- PDF report generation
 - PNG graph downloads for supported modules
 - LaTeX export for analysis summaries
 
 ## Repository Structure
 
-```text
+```
 .
-|-- app.py               # Flask app and desktop launcher entry
-|-- desktop.py           # Minimal desktop bootstrap
-|-- web_routes.py        # HTTP routes, form handling, download endpoints
-|-- analysis_service.py  # Analysis orchestration, caching, module builders
-|-- state_store.py       # Shared app state, defaults, cache helpers
-|-- file_analizer.py     # FNIRSI .wav parsing and metadata extraction
-|-- signal_analyzer.py   # Signal processing and engineering calculations
-|-- plot_maker.py        # Plot generation with matplotlib
-|-- report.py            # LaTeX export helpers
-|-- templates/
-|   `-- main.html        # Main UI
-|-- static/
-|   `-- style.css        # Styles
-|-- requirements.txt
-|-- app.spec             # PyInstaller configuration
-|-- installer.iss        # Inno Setup installer script
-`-- iniciar.bat          # Local setup helper
+├── app.py                 # Flask app and desktop launcher entry
+├── desktop.py             # Minimal desktop bootstrap with error handling
+├── web_routes.py          # HTTP routes, form handling, download endpoints
+├── analysis_service.py    # Analysis orchestration, caching, module builders
+├── state_store.py         # Shared app state, defaults, session management
+├── file_analizer.py       # FNIRSI .wav parsing and metadata extraction
+├── signal_analyzer.py     # Signal processing and engineering calculations
+├── plot_maker.py          # Plot generation with matplotlib
+├── report.py              # LaTeX export helpers
+├── constants.py           # Color constants and channel definitions
+├── version.py             # Application version (fixed: 2.0.1)
+├── digital_analyzer.py    # Digital signal analysis (PWM, pulses, edges, logic)
+├── export_service.py      # SVG, CSV, PDF export functions
+├── project_service.py     # Project save/load/list
+├── requirements.txt       # Python dependencies
+├── app.spec               # PyInstaller configuration
+├── installer.iss          # Inno Setup installer script
+├── build.bat              # Build pipeline script
+├── iniciar.bat            # Local setup and launch helper
+├── comit.bat              # Git commit helper
+├── templates/
+│   ├── main.html          # Main UI template
+│   ├── icon.ico           # Application icon
+│   └── icon.png           # PNG version of the icon
+└── static/
+    ├── style.css          # Custom application styles
+    ├── opencode.css       # OpenCode CSS framework
+    ├── opencode.js        # OpenCode JavaScript framework
+    └── icono.png          # Sidebar icon
 ```
 
 ## Analysis Modules
@@ -85,7 +101,7 @@ Current capabilities include:
 - rise time, fall time, overshoot, undershoot
 - slew rate and crest factor
 
-### Derivative and integral
+### Derivative and integral (calculus)
 
 - derivative of `X`, `Y`, or `MATH`
 - integral of `X`, `Y`, or `MATH`
@@ -135,18 +151,44 @@ Current capabilities include:
 - optional inversion per channel
 - optional normalization
 
-### Cursors and cycle analysis
+### Cursors
 
 - manual time cursors with draggable overlay
-- `t1`, `t2`, `V1`, `V2`, `delta t`, `delta V`
+- single mode: `t1`, `t2`, `V1`, `V2`, `delta t`, `delta V`
+- dual mode: independent signals on A and B cursors
 - estimated frequency from cursor distance
+- PNG download of cursor graph
+
+### Cycle analysis
+
 - cycle count, average frequency, average period, average Vpp, average RMS
+
+### Digital analysis
+
+- PWM analysis: frequency, duty cycle, period, pulse count
+- pulse counting: rising/falling edge count
+- edge detection: rising/falling edge timestamps, edge rate
+- logic level analysis: family detection, high/low thresholds, noise margin
 
 ### Snapshots and comparison
 
 - save measurement snapshots from the active file
 - compare the current file against a saved snapshot
 - delta Vpp and delta frequency summary
+
+### Project save/load
+
+- save the full analysis state to a JSON file
+- load a previously saved project to restore state
+- list saved projects
+
+### Export formats
+
+- SVG: vector graph download of the main oscilloscope view
+- CSV: signal data (time, CH1, CH2, MATH), measurements, and FFT data
+- PDF: multi-page report with main graph, measurements, FFT, and statistics
+- PNG: per-module graph downloads (main, MATH, FFT, derivative, integral, current, transfer, X-Y, cursor)
+- LaTeX: per-module LaTeX table generation for academic reports
 
 ## File Decoding and Reconstruction
 
@@ -156,9 +198,7 @@ The parser currently reads:
 - probe factor
 - coupling mode
 - `time/div`
-- trigger type
-- trigger edge
-- trigger channel
+- trigger type, edge, channel
 - trigger 50% flag
 - automatic oscilloscope measurements
 - visible waveform block
@@ -171,30 +211,10 @@ The visible waveform pipeline is tuned to match the oscilloscope screen as close
 - the window is cropped around the trigger-centered region
 - the time axis is rebuilt from the oscilloscope `time/div`
 
-## Running the Project
+## Requirements
 
-### Desktop mode
-
-```powershell
-python app.py
-```
-
-By default, `app.py` launches the local Flask backend and opens a native `pywebview` window.
-
-You can also use:
-
-```powershell
-python desktop.py
-```
-
-### Server-only mode
-
-```powershell
-$env:FNIRSI_APP_MODE="server"
-python app.py
-```
-
-This starts only the local Flask server on `127.0.0.1:5000`.
+- Python 3.8 or later
+- Windows (uses `pywebview` with native WinForms window; server-only mode may work on other platforms)
 
 ## Installing Dependencies
 
@@ -204,28 +224,100 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Or use:
+Or use the automated setup script:
 
 ```powershell
 iniciar.bat
 ```
 
-## Packaging
+This creates a virtual environment, installs dependencies, and launches the application.
 
-Build support files are already included:
+## Running
 
-- [app.spec](C:\Users\rance\OneDrive\Documentos\fnirsi-1014d-oscilloscope-wav-analyzer\app.spec) for PyInstaller
-- [installer.iss](C:\Users\rance\OneDrive\Documentos\fnirsi-1014d-oscilloscope-wav-analyzer\installer.iss) for Inno Setup
-
-Typical build flow:
+### Desktop mode
 
 ```powershell
-pip install pyinstaller
-pyinstaller --clean --noconfirm app.spec
+python app.py
+```
+
+Launches the Flask backend and opens a native `pywebview` window.
+
+```powershell
+python desktop.py
+```
+
+Alternative entry point with detailed error reporting and graceful shutdown.
+
+### Server-only mode
+
+```powershell
+$env:FNIRSI_APP_MODE="server"
+python app.py
+```
+
+Starts only the Flask server on `127.0.0.1:5000` without opening a desktop window. Access the interface at `http://127.0.0.1:5000/`.
+
+## Building the Executable
+
+The project uses PyInstaller to generate a standalone `.exe` and Inno Setup to create an installer.
+
+### Prerequisites
+
+- Python 3.8+ with all dependencies installed
+- PyInstaller (`pip install pyinstaller`)
+- Inno Setup 6 installed at the default path
+
+### Quick build
+
+```powershell
+build.bat
+```
+
+### Manual build steps
+
+1. Install PyInstaller:
+
+   ```powershell
+   pip install pyinstaller
+   ```
+
+2. Clean previous builds:
+
+   ```powershell
+   rmdir /s /q build
+   rmdir /s /q dist
+   ```
+
+3. Build the executable:
+
+   ```powershell
+   python -m PyInstaller app.spec
+   ```
+
+4. Copy the output:
+
+   ```powershell
+   xcopy /e /y dist\FNIRSI1014DAnalyzer\* dist\
+   ```
+
+5. (Optional) Create an installer with Inno Setup:
+
+   ```powershell
+   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+   ```
+
+The standalone executable is located at:
+
+```
+dist\FNIRSI1014DAnalyzer.exe
+```
+
+The Inno Setup installer output is created at:
+
+```
+installer_output\FNIRSI1014DAnalyzerSetup.exe
 ```
 
 ## License
 
-This project is released under the MIT License.
-
-See [LICENSE](C:\Users\rance\OneDrive\Documentos\fnirsi-1014d-oscilloscope-wav-analyzer\LICENSE).
+This project is released under the MIT License. See `LICENSE`.
