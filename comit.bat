@@ -1,8 +1,15 @@
 @echo off
-git add -A
-if "%1"=="" (
-    git commit -m "update"
-) else (
-    git commit -m "%*"
+set /p mensaje=Ingrese el mensaje del commit: 
+
+git add .
+git commit -m "%mensaje%"
+if errorlevel 1 (
+    pause
+    exit /b
 )
-git status
+
+git push
+if errorlevel 1 (
+    pause
+    exit /b
+)
