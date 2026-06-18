@@ -1251,10 +1251,28 @@ def convert_scope_data(ch1, ch2, config, measures):
     """
     Convierte las muestras visibles del osciloscopio a voltajes reales.
 
+    Flujo de procesamiento obligatorio por canal:
+      1. Señal RAW
+      2. Suavizado (adaptive_scope_filter sobre datos RAW)
+      3. Cálculo de Min y Max sobre la señal suavizada
+      4. Ajuste de amplitud usando Vmax/Vmin de measures
+      5. Conversión a voltaje real
+
     Para la grafica de pantalla usamos una transformacion afin basada en
     Vmax/Vmin del archivo, de modo que se conserve el offset DC real del
     canal en lugar de asumir que el nivel 200 siempre representa 0 V.
     """
+    # Calcular fs desde config y longitud de señal para el suavizado
+    def _compute_fs(signal, cfg):
+        n = len(signal)
+        if n == 0:
+            return 0.0
+        time_div_s = float(cfg.get("time_div", 0) or 0) * float(cfg.get("time_multiplier", 1) or 1)
+        if time_div_s <= 0:
+            return 0.0
+        total_time = 14 * time_div_s  # 14 divisiones de pantalla (constante del osciloscopio)
+        return n / total_time
+
     channels = []
 
     for channel_index, raw in enumerate([ch1, ch2]):
@@ -1263,23 +1281,35 @@ def convert_scope_data(ch1, ch2, config, measures):
             channels.append(raw)
             continue
 
-        raw_max = float(np.max(raw))
-        raw_min = float(np.min(raw))
         vmax = float(measures["Vmax"][channel_index])
         vmin = float(measures["Vmin"][channel_index])
-        probe = float(config["probe"][channel_index])
+        # Los valores Vmax/Vmin del WAV ya incorporan el factor de sonda
+        # (el firmware del osciloscopio almacena el voltaje en la punta).
+        # No se debe multiplicar por probe otra vez.
+
+        # PASO 2: Suavizado sobre señal RAW antes de cualquier conversión
+        fs = _compute_fs(raw, config)
+        if fs > 0 and raw.size >= 10:
+            smoothed_raw = adaptive_scope_filter(raw, fs)
+        else:
+            smoothed_raw = raw.copy()
+
+        # PASO 3: Min y Max calculados sobre la señal RAW suavizada
+        raw_max = float(np.max(smoothed_raw))
+        raw_min = float(np.min(smoothed_raw))
 
         if raw_max == raw_min:
             midpoint = (vmax + vmin) / 2.0
-            volts = np.full_like(raw, midpoint * probe, dtype=float)
+            volts = np.full_like(smoothed_raw, midpoint, dtype=float)
             channels.append(volts)
             continue
 
+        # PASO 4-5: Ajuste de amplitud y conversión a voltaje real.
         # dataScreen usa coordenadas Y desde arriba hacia abajo, asi que el
         # valor mas pequeno en pantalla corresponde al mayor voltaje.
         scale = (vmin - vmax) / (raw_max - raw_min)
         offset = vmax - scale * raw_min
-        volts = (scale * raw + offset) * probe
+        volts = scale * smoothed_raw + offset
         channels.append(volts)
 
     return channels[0], channels[1]

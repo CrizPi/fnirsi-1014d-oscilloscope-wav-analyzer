@@ -1,3 +1,6 @@
+; Version is defined in version.py (MAJOR.MINOR.PATCH).
+; Run: python -c "from version import version_str; print(version_str())"
+; to retrieve the current version for this script.
 #define MyAppName "FNIRSI 1014D Analyzer"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "CrizPi"

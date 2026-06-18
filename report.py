@@ -1,11 +1,9 @@
-from plot_maker import (
-    generate_correlation_grafic_file,
-    generate_fft_grafic_file,
-    generate_grafic_file,
-    generate_signal_analysis_grafic_file,
-    generate_voltage_current_grafic_file,
-    generate_xy_mode_grafic_file,
-)
+def _channel_label(channel_id, ch1_name="CH1", ch2_name="CH2"):
+    if channel_id in ("X", "CH1"):
+        return ch1_name
+    if channel_id in ("Y", "CH2"):
+        return ch2_name
+    return str(channel_id)
 
 
 def _latex_escape(value):
@@ -22,12 +20,14 @@ def _latex_escape(value):
     return text
 
 
-def generate_grafic_download(t, ch1, ch2, file_name, measures=None, scope_config=None, show_empty=False):
-    return generate_grafic_file(t, ch1, ch2, file_name, measures=measures, scope_config=scope_config, show_empty=show_empty)
+def generate_grafic_download(t, ch1, ch2, file_name, measures=None, scope_config=None, show_empty=False, ch1_name="CH1", ch2_name="CH2"):
+    from plot_maker import generate_grafic_file
+    return generate_grafic_file(t, ch1, ch2, file_name, measures=measures, scope_config=scope_config, show_empty=show_empty, ch1_name=ch1_name, ch2_name=ch2_name)
 
 
-def generate_grafic_download_math(t, ch1, ch2, file_name, math_result=None):
-    return generate_grafic_file(t, ch1, ch2, file_name, math_result=math_result, show_empty=True)
+def generate_grafic_download_math(t, ch1, ch2, file_name, math_result=None, ch1_name="CH1", ch2_name="CH2"):
+    from plot_maker import generate_grafic_file
+    return generate_grafic_file(t, ch1, ch2, file_name, math_result=math_result, show_empty=True, ch1_name=ch1_name, ch2_name=ch2_name)
 
 
 def generate_fft_grafic_download(
@@ -38,6 +38,7 @@ def generate_fft_grafic_download(
     scale_mode="linear",
     dominant_frequency_hz=0.0,
 ):
+    from plot_maker import generate_fft_grafic_file
     return generate_fft_grafic_file(
         frequencies_hz,
         magnitudes,
@@ -49,89 +50,116 @@ def generate_fft_grafic_download(
 
 
 def generate_signal_analysis_download(t, signal, title, y_label):
+    from plot_maker import generate_signal_analysis_grafic_file
     return generate_signal_analysis_grafic_file(t, signal, title, y_label)
 
 
 def generate_correlation_grafic_download(lags_seconds, correlation, title, marker_x=None, marker_y=None):
+    from plot_maker import generate_correlation_grafic_file
     return generate_correlation_grafic_file(lags_seconds, correlation, title, marker_x=marker_x, marker_y=marker_y)
 
 
-def generate_current_grafic_download(t, voltage, current, title):
-    return generate_voltage_current_grafic_file(t, voltage, current, title)
+def generate_current_grafic_download(t, voltage, current, title, voltage_channel=None):
+    from plot_maker import generate_voltage_current_grafic_file
+    return generate_voltage_current_grafic_file(t, voltage, current, title, voltage_channel=voltage_channel)
 
 
 def generate_xy_grafic_download(x_signal, y_signal, title, x_label="X (V)", y_label="Y (V)"):
+    from plot_maker import generate_xy_mode_grafic_file
     return generate_xy_mode_grafic_file(x_signal, y_signal, title, x_label=x_label, y_label=y_label)
+
+
+def _caption_to_label(caption):
+    """Convert a caption string to a LaTeX label (e.g. 'tab:oscilloscope-measurements')."""
+    label = caption.strip().lower()
+    label = "".join(c if c.isalnum() else "-" for c in label)
+    label = "-".join(filter(None, label.split("-")))
+    return f"tab:{label}" if label else "tab:table"
 
 
 def generate_latex_table(rows, caption="Tabla", headers=("X", "Y")):
     has_third_column = bool(headers[1])
+    has_unit_column = any(len(row) > 3 and row[3] for row in rows)
+    num_val_cols = 2 if has_third_column else 1
+    col_count = 1 + num_val_cols  # measure + value columns (units are now inline)
 
-    if has_third_column:
-        latex = r"""
-\begin{table}[h]
+    # IEEE-style: left-aligned measure column, centered data columns
+    col_spec = "l" + "c" * (col_count - 1)
+
+    latex = r"""
+\begin{table}[htbp]
+\caption{""" + _latex_escape(caption) + r"""}
+\label{""" + _caption_to_label(caption) + r"""}
 \centering
-\begin{tabular}{|c|c|c|}
+\begin{tabular}{""" + col_spec + r"""}
 \hline
 """
-        latex += f"Measure & {_latex_escape(headers[0])} & {_latex_escape(headers[1])} \\\\\n\\hline\n"
-    else:
-        latex = r"""
-\begin{table}[h]
-\centering
-\begin{tabular}{|c|c|}
-\hline
-"""
-        latex += f"Measure & {_latex_escape(headers[0])} \\\\\n\\hline\n"
 
-    for row in rows:
-        if has_third_column:
-            measure, value_1, value_2 = row
-            latex += f"{_latex_escape(measure)} & {_latex_escape(value_1)} & {_latex_escape(value_2)} \\\\\n\\hline\n"
+    if has_unit_column:
+        if num_val_cols == 2:
+            latex += f"Measure & {_latex_escape(headers[0])} & {_latex_escape(headers[1])} \\\\\n\\hline\n"
         else:
-            measure, value_1, _ = row
-            latex += f"{_latex_escape(measure)} & {_latex_escape(value_1)} \\\\\n\\hline\n"
+            latex += f"Measure & {_latex_escape(headers[0])} \\\\\n\\hline\n"
+        for row in rows:
+            measure = row[0]
+            vals = list(row[1:1+num_val_cols])
+            unit = _latex_escape(row[3]) if len(row) > 3 and row[3] else ""
+            cells = " & ".join(
+                f"{_latex_escape(v)} {unit}" if unit else _latex_escape(v)
+                for v in vals
+            )
+            latex += f"{_latex_escape(measure)} & {cells} \\\\\n"
+    elif has_third_column:
+        latex += f"Measure & {_latex_escape(headers[0])} & {_latex_escape(headers[1])} \\\\\n\\hline\n"
+        for row in rows:
+            measure, value_1, value_2 = row[:3]
+            latex += f"{_latex_escape(measure)} & {_latex_escape(value_1)} & {_latex_escape(value_2)} \\\\\n"
+    else:
+        latex += f"Measure & {_latex_escape(headers[0])} \\\\\n\\hline\n"
+        for row in rows:
+            measure, value_1 = row[0], row[1]
+            latex += f"{_latex_escape(measure)} & {_latex_escape(value_1)} \\\\\n"
 
-    latex += f"""
-\\end{{tabular}}
-\\caption{{{_latex_escape(caption)}}}
-\\end{{table}}
+    latex += r"""
+\hline
+\end{tabular}
+\end{table}
 """
     return latex
 
 
-def generate_measures_latex(measures):
+def generate_measures_latex(measures, ch1_name="CH1", ch2_name="CH2"):
     rows = [
-        ("Vmax", f"{measures['Vmax'][0]} V", f"{measures['Vmax'][1]} V"),
-        ("Vmin", f"{measures['Vmin'][0]} V", f"{measures['Vmin'][1]} V"),
-        ("Vavg", f"{measures['Vavg'][0]} V", f"{measures['Vavg'][1]} V"),
-        ("Vrms", f"{measures['Vrms'][0]} Vrms", f"{measures['Vrms'][1]} Vrms"),
-        ("Vpp", f"{measures['Vpp'][0]} Vpp", f"{measures['Vpp'][1]} Vpp"),
-        ("Vp", f"{measures['Vp'][0]} Vp", f"{measures['Vp'][1]} Vp"),
-        ("Freq", f"{measures['Freq'][0]} {measures['freq_units'][0]}", f"{measures['Freq'][1]} {measures['freq_units'][1]}"),
-        ("Cycle", f"{measures['Cycle'][0]} {measures['cycle_units'][0]}", f"{measures['Cycle'][1]} {measures['cycle_units'][1]}"),
-        ("Time+", f"{measures['Time+'][0]} {measures['time_plus_units'][0]}", f"{measures['Time+'][1]} {measures['time_plus_units'][1]}"),
-        ("Time-", f"{measures['Time-'][0]} {measures['time_minus_units'][0]}", f"{measures['Time-'][1]} {measures['time_minus_units'][1]}"),
-        ("Duty+", f"{measures['Duty+'][0]} \\%", f"{measures['Duty+'][1]} \\%"),
-        ("Duty-", f"{measures['Duty-'][0]} \\%", f"{measures['Duty-'][1]} \\%"),
+        ("Vmax", f"{measures['Vmax'][0]}", f"{measures['Vmax'][1]}", "V"),
+        ("Vmin", f"{measures['Vmin'][0]}", f"{measures['Vmin'][1]}", "V"),
+        ("Vavg", f"{measures['Vavg'][0]}", f"{measures['Vavg'][1]}", "V"),
+        ("Vrms", f"{measures['Vrms'][0]}", f"{measures['Vrms'][1]}", "V"),
+        ("Vpp", f"{measures['Vpp'][0]}", f"{measures['Vpp'][1]}", "V"),
+        ("Vp", f"{measures['Vp'][0]}", f"{measures['Vp'][1]}", "V"),
+        ("Freq", f"{measures['Freq'][0]}", f"{measures['Freq'][1]}", measures['freq_units'][0]),
+        ("Cycle", f"{measures['Cycle'][0]}", f"{measures['Cycle'][1]}", measures['cycle_units'][0]),
+        ("Time+", f"{measures['Time+'][0]}", f"{measures['Time+'][1]}", measures['time_plus_units'][0]),
+        ("Time-", f"{measures['Time-'][0]}", f"{measures['Time-'][1]}", measures['time_minus_units'][0]),
+        ("Duty+", f"{measures['Duty+'][0]}", f"{measures['Duty+'][1]}", "\\%"),
+        ("Duty-", f"{measures['Duty-'][0]}", f"{measures['Duty-'][1]}", "\\%"),
     ]
-    return generate_latex_table(rows, caption="Oscilloscope Measurements")
+    return generate_latex_table(rows, caption="Oscilloscope Measurements", headers=(ch1_name, ch2_name))
 
 
 def generate_math_measures_latex(math_measures, operation=None):
     rows = [
-        ("Vmax", f"{math_measures['Vmax']} V", ""),
-        ("Vmin", f"{math_measures['Vmin']} V", ""),
-        ("Vavg", f"{math_measures['Vavg']} V", ""),
-        ("Vrms", f"{math_measures['Vrms']} Vrms", ""),
-        ("Vpp", f"{math_measures['Vpp']} Vpp", ""),
-        ("Vp", f"{math_measures['Vp']} Vp", ""),
-        ("Freq", f"{math_measures['Freq']} {math_measures['freq_unit']}", ""),
-        ("Cycle", f"{math_measures['Cycle']} {math_measures['cycle_unit']}", ""),
-        ("Time+", f"{math_measures['Time+']} {math_measures['time_plus_unit']}", ""),
-        ("Time-", f"{math_measures['Time-']} {math_measures['time_minus_unit']}", ""),
-        ("Duty+", f"{math_measures['Duty+']} \\%", ""),
-        ("Duty-", f"{math_measures['Duty-']} \\%", ""),
+        ("Vmax", f"{math_measures['Vmax']}", "", "V"),
+        ("Vmin", f"{math_measures['Vmin']}", "", "V"),
+        ("Vavg", f"{math_measures['Vavg']}", "", "V"),
+        ("Vrms", f"{math_measures['Vrms']}", "", "V"),
+        ("Vpp", f"{math_measures['Vpp']}", "", "V"),
+        ("Vp", f"{math_measures['Vp']}", "", "V"),
+        ("Freq", f"{math_measures['Freq']}", "", math_measures['freq_unit']),
+        ("Cycle", f"{math_measures['Cycle']}", "", math_measures['cycle_unit']),
+        ("Time+", f"{math_measures['Time+']}", "", math_measures['time_plus_unit']),
+        ("Time-", f"{math_measures['Time-']}", "", math_measures['time_minus_unit']),
+        ("Duty+", f"{math_measures['Duty+']}", "", "\\%"),
+        ("Duty-", f"{math_measures['Duty-']}", "", "\\%"),
     ]
     caption = "Oscilloscope MATH Measurements"
     if operation:
@@ -139,72 +167,89 @@ def generate_math_measures_latex(math_measures, operation=None):
     return generate_latex_table(rows, caption=caption, headers=("Value", ""))
 
 
-def generate_statistics_latex(statistics_data):
+def generate_statistics_latex(statistics_data, ch1_name="CH1", ch2_name="CH2"):
+    unit_map = {"Mean": "V", "Std Dev": "V", "Variance": "V$^2$", "Median": "V",
+                "Min": "V", "Max": "V", "Range": "V", "RMS": "V", "Peak-to-Peak": "V"}
     if statistics_data.get("math_enabled"):
         latex = r"""
-\begin{table}[h]
+\begin{table}[htbp]
+\caption{Signal Statistics}
+\label{tab:signal-statistics}
 \centering
-\begin{tabular}{|c|c|c|c|}
+\begin{tabular}{lccc}
 \hline
-Measure & X & Y & MATH \\
+Measure & """ + _latex_escape(ch1_name) + r""" & """ + _latex_escape(ch2_name) + r""" & MATH \\
 \hline
 """
-        rows = [
-            ("Mean", f"{statistics_data['X']['mean']} V", f"{statistics_data['Y']['mean']} V", f"{statistics_data['MATH']['mean']} V"),
-            ("Std Dev", f"{statistics_data['X']['std_dev']} V", f"{statistics_data['Y']['std_dev']} V", f"{statistics_data['MATH']['std_dev']} V"),
-            ("Variance", f"{statistics_data['X']['variance']} V^2", f"{statistics_data['Y']['variance']} V^2", f"{statistics_data['MATH']['variance']} V^2"),
-            ("Median", f"{statistics_data['X']['median']} V", f"{statistics_data['Y']['median']} V", f"{statistics_data['MATH']['median']} V"),
-            ("Min", f"{statistics_data['X']['min']} V", f"{statistics_data['Y']['min']} V", f"{statistics_data['MATH']['min']} V"),
-            ("Max", f"{statistics_data['X']['max']} V", f"{statistics_data['Y']['max']} V", f"{statistics_data['MATH']['max']} V"),
-            ("Range", f"{statistics_data['X']['range']} V", f"{statistics_data['Y']['range']} V", f"{statistics_data['MATH']['range']} V"),
-            ("RMS", f"{statistics_data['X']['rms']} V", f"{statistics_data['Y']['rms']} V", f"{statistics_data['MATH']['rms']} V"),
-            ("Peak-to-Peak", f"{statistics_data['X']['peak_to_peak']} V", f"{statistics_data['Y']['peak_to_peak']} V", f"{statistics_data['MATH']['peak_to_peak']} V"),
+        stat_rows = [
+            ("Mean", f"{statistics_data['X']['mean']}", f"{statistics_data['Y']['mean']}", f"{statistics_data['MATH']['mean']}"),
+            ("Std Dev", f"{statistics_data['X']['std_dev']}", f"{statistics_data['Y']['std_dev']}", f"{statistics_data['MATH']['std_dev']}"),
+            ("Variance", f"{statistics_data['X']['variance']}", f"{statistics_data['Y']['variance']}", f"{statistics_data['MATH']['variance']}"),
+            ("Median", f"{statistics_data['X']['median']}", f"{statistics_data['Y']['median']}", f"{statistics_data['MATH']['median']}"),
+            ("Min", f"{statistics_data['X']['min']}", f"{statistics_data['Y']['min']}", f"{statistics_data['MATH']['min']}"),
+            ("Max", f"{statistics_data['X']['max']}", f"{statistics_data['Y']['max']}", f"{statistics_data['MATH']['max']}"),
+            ("Range", f"{statistics_data['X']['range']}", f"{statistics_data['Y']['range']}", f"{statistics_data['MATH']['range']}"),
+            ("RMS", f"{statistics_data['X']['rms']}", f"{statistics_data['Y']['rms']}", f"{statistics_data['MATH']['rms']}"),
+            ("Peak-to-Peak", f"{statistics_data['X']['peak_to_peak']}", f"{statistics_data['Y']['peak_to_peak']}", f"{statistics_data['MATH']['peak_to_peak']}"),
         ]
-        for measure, x_value, y_value, math_value in rows:
-            latex += f"{_latex_escape(measure)} & {_latex_escape(x_value)} & {_latex_escape(y_value)} & {_latex_escape(math_value)} \\\\\n\\hline\n"
+        for measure, x_value, y_value, math_value in stat_rows:
+            unit = _latex_escape(unit_map.get(measure, ""))
+            sep = " " if unit else ""
+            latex += f"{_latex_escape(measure)} & {_latex_escape(x_value)}{sep}{unit} & {_latex_escape(y_value)}{sep}{unit} & {_latex_escape(math_value)}{sep}{unit} \\\\\n"
         latex += r"""
+\hline
 \end{tabular}
-\caption{Signal Statistics}
 \end{table}
 """
         return latex
 
     rows = [
-        ("Mean", f"{statistics_data['X']['mean']} V", f"{statistics_data['Y']['mean']} V"),
-        ("Std Dev", f"{statistics_data['X']['std_dev']} V", f"{statistics_data['Y']['std_dev']} V"),
-        ("Variance", f"{statistics_data['X']['variance']} V^2", f"{statistics_data['Y']['variance']} V^2"),
-        ("Median", f"{statistics_data['X']['median']} V", f"{statistics_data['Y']['median']} V"),
-        ("Min", f"{statistics_data['X']['min']} V", f"{statistics_data['Y']['min']} V"),
-        ("Max", f"{statistics_data['X']['max']} V", f"{statistics_data['Y']['max']} V"),
-        ("Range", f"{statistics_data['X']['range']} V", f"{statistics_data['Y']['range']} V"),
-        ("RMS", f"{statistics_data['X']['rms']} V", f"{statistics_data['Y']['rms']} V"),
-        ("Peak-to-Peak", f"{statistics_data['X']['peak_to_peak']} V", f"{statistics_data['Y']['peak_to_peak']} V"),
+        ("Mean", f"{statistics_data['X']['mean']}", f"{statistics_data['Y']['mean']}", "V"),
+        ("Std Dev", f"{statistics_data['X']['std_dev']}", f"{statistics_data['Y']['std_dev']}", "V"),
+        ("Variance", f"{statistics_data['X']['variance']}", f"{statistics_data['Y']['variance']}", "V$^2$"),
+        ("Median", f"{statistics_data['X']['median']}", f"{statistics_data['Y']['median']}", "V"),
+        ("Min", f"{statistics_data['X']['min']}", f"{statistics_data['Y']['min']}", "V"),
+        ("Max", f"{statistics_data['X']['max']}", f"{statistics_data['Y']['max']}", "V"),
+        ("Range", f"{statistics_data['X']['range']}", f"{statistics_data['Y']['range']}", "V"),
+        ("RMS", f"{statistics_data['X']['rms']}", f"{statistics_data['Y']['rms']}", "V"),
+        ("Peak-to-Peak", f"{statistics_data['X']['peak_to_peak']}", f"{statistics_data['Y']['peak_to_peak']}", "V"),
     ]
-    return generate_latex_table(rows, caption="Signal Statistics")
+    return generate_latex_table(rows, caption="Signal Statistics", headers=(ch1_name, ch2_name))
 
 
-def generate_advanced_measures_latex(advanced_data):
+def generate_advanced_measures_latex(advanced_data, ch1_name="CH1", ch2_name="CH2"):
     latex = r"""
-\begin{table}[h]
+\begin{table}[htbp]
+\caption{Advanced Signal Measures}
+\label{tab:advanced-signal-measures}
 \centering
-\begin{tabular}{|c|c|c|c|}
+\begin{tabular}{lccc}
 \hline
-Measure & X & Y & MATH \\
+Measure & """ + _latex_escape(ch1_name) + r""" & """ + _latex_escape(ch2_name) + r""" & MATH \\
 \hline
 """
+    def math_or_dash(key, subkey):
+        if advanced_data.get("math_enabled"):
+            v = advanced_data['MATH'].get(subkey, "-")
+            u = advanced_data['MATH'].get(subkey + "_unit", "")
+            return f"{v}" if u else f"{v}"
+        return "-"
+    math_enabled = advanced_data.get("math_enabled", False)
     rows = [
-        ("Rise Time", f"{advanced_data['X']['rise_time']} {advanced_data['X']['rise_time_unit']}", f"{advanced_data['Y']['rise_time']} {advanced_data['Y']['rise_time_unit']}", f"{advanced_data['MATH']['rise_time']} {advanced_data['MATH']['rise_time_unit']}" if advanced_data.get("math_enabled") else "-"),
-        ("Fall Time", f"{advanced_data['X']['fall_time']} {advanced_data['X']['fall_time_unit']}", f"{advanced_data['Y']['fall_time']} {advanced_data['Y']['fall_time_unit']}", f"{advanced_data['MATH']['fall_time']} {advanced_data['MATH']['fall_time_unit']}" if advanced_data.get("math_enabled") else "-"),
-        ("Overshoot", f"{advanced_data['X']['overshoot']} %", f"{advanced_data['Y']['overshoot']} %", f"{advanced_data['MATH']['overshoot']} %" if advanced_data.get("math_enabled") else "-"),
-        ("Undershoot", f"{advanced_data['X']['undershoot']} %", f"{advanced_data['Y']['undershoot']} %", f"{advanced_data['MATH']['undershoot']} %" if advanced_data.get("math_enabled") else "-"),
-        ("Slew Rate", f"{advanced_data['X']['slew_rate']} {advanced_data['X']['slew_rate_unit']}", f"{advanced_data['Y']['slew_rate']} {advanced_data['Y']['slew_rate_unit']}", f"{advanced_data['MATH']['slew_rate']} {advanced_data['MATH']['slew_rate_unit']}" if advanced_data.get("math_enabled") else "-"),
-        ("Crest Factor", f"{advanced_data['X']['crest_factor']}", f"{advanced_data['Y']['crest_factor']}", f"{advanced_data['MATH']['crest_factor']}" if advanced_data.get("math_enabled") else "-"),
+        ("Rise Time", f"{advanced_data['X']['rise_time']}", f"{advanced_data['Y']['rise_time']}", f"{advanced_data['MATH']['rise_time']}" if math_enabled else "-", advanced_data['X']['rise_time_unit']),
+        ("Fall Time", f"{advanced_data['X']['fall_time']}", f"{advanced_data['Y']['fall_time']}", f"{advanced_data['MATH']['fall_time']}" if math_enabled else "-", advanced_data['X']['fall_time_unit']),
+        ("Overshoot", f"{advanced_data['X']['overshoot']}", f"{advanced_data['Y']['overshoot']}", f"{advanced_data['MATH']['overshoot']}" if math_enabled else "-", "\\%"),
+        ("Undershoot", f"{advanced_data['X']['undershoot']}", f"{advanced_data['Y']['undershoot']}", f"{advanced_data['MATH']['undershoot']}" if math_enabled else "-", "\\%"),
+        ("Slew Rate", f"{advanced_data['X']['slew_rate']}", f"{advanced_data['Y']['slew_rate']}", f"{advanced_data['MATH']['slew_rate']}" if math_enabled else "-", advanced_data['X']['slew_rate_unit']),
+        ("Crest Factor", f"{advanced_data['X']['crest_factor']}", f"{advanced_data['Y']['crest_factor']}", f"{advanced_data['MATH']['crest_factor']}" if math_enabled else "-", ""),
     ]
-    for measure, x_value, y_value, math_value in rows:
-        latex += f"{_latex_escape(measure)} & {_latex_escape(x_value)} & {_latex_escape(y_value)} & {_latex_escape(math_value)} \\\\\n\\hline\n"
+    for measure, x_value, y_value, math_value, unit in rows:
+        unit_esc = _latex_escape(unit)
+        sep = f" {unit_esc}" if unit_esc else ""
+        latex += f"{_latex_escape(measure)} & {_latex_escape(x_value)}{sep} & {_latex_escape(y_value)}{sep} & {_latex_escape(math_value)}{sep} \\\\\n"
     latex += r"""
+\hline
 \end{tabular}
-\caption{Advanced Signal Measures}
 \end{table}
 """
     return latex
@@ -218,17 +263,20 @@ def generate_correlation_latex(correlation_data):
     return generate_latex_table(rows, caption="Channel Correlation", headers=("Value", ""))
 
 
-def generate_fft_latex(fft_data):
+def generate_fft_latex(fft_data, ch1_name="CH1", ch2_name="CH2"):
     lines = [
         r"\section*{FFT Analysis}",
-        rf"Channel: {_latex_escape(fft_data.get('channel', 'X'))}\\",
+        rf"Channel: {_latex_escape(_channel_label(fft_data.get('channel', 'X'), ch1_name, ch2_name))}\\",
         rf"Window: {_latex_escape(fft_data.get('window_type', 'hann'))}\\",
         rf"Dominant frequency: {_latex_escape(fft_data.get('dominant_frequency', 0))} {_latex_escape(fft_data.get('dominant_frequency_unit', 'Hz'))}\\",
         rf"Dominant amplitude: {_latex_escape(fft_data.get('dominant_magnitude', 0))} V\\",
         rf"THD: {_latex_escape(fft_data.get('thd_percent', 0))} \%",
         "",
-        r"\subsection*{Top Peaks}",
-        r"\begin{tabular}{|c|c|c|}",
+        r"\begin{table}[htbp]",
+        r"\caption{FFT Top Peaks}",
+        r"\label{tab:fft-top-peaks}",
+        r"\centering",
+        r"\begin{tabular}{lcc}",
         r"\hline",
         r"Index & Frequency & Amplitude \\",
         r"\hline",
@@ -237,14 +285,12 @@ def generate_fft_latex(fft_data):
         lines.append(
             f"{index} & {_latex_escape(peak['frequency'])} {_latex_escape(peak['frequency_unit'])} & {_latex_escape(peak['magnitude'])} \\\\"
         )
-        lines.append(r"\hline")
-    lines.extend([r"\end{tabular}", "", r"\subsection*{Harmonics}", r"\begin{tabular}{|c|c|c|}", r"\hline", r"Order & Frequency & Amplitude \\", r"\hline"])
+    lines.extend([r"\hline", r"\end{tabular}", r"\end{table}", "", r"\begin{table}[htbp]", r"\caption{FFT Harmonics}", r"\label{tab:fft-harmonics}", r"\centering", r"\begin{tabular}{lcc}", r"\hline", r"Order & Frequency & Amplitude \\", r"\hline"])
     for harmonic in fft_data.get("harmonics", []):
         lines.append(
             f"{harmonic['order']} & {_latex_escape(harmonic['frequency'])} {_latex_escape(harmonic['frequency_unit'])} & {_latex_escape(harmonic['magnitude'])} \\\\"
         )
-        lines.append(r"\hline")
-    lines.append(r"\end{tabular}")
+    lines.extend([r"\hline", r"\end{tabular}", r"\end{table}"])
     return "\n".join(lines)
 
 
@@ -272,33 +318,33 @@ def generate_cycle_latex(cycle_data):
     return generate_latex_table(rows, caption="Cycle Analysis", headers=("Value", ""))
 
 
-def generate_calibration_latex(calibration_settings):
+def generate_calibration_latex(calibration_settings, ch1_name="CH1", ch2_name="CH2"):
     rows = [
-        ("X Gain", calibration_settings.get("x_gain", 1), ""),
-        ("Y Gain", calibration_settings.get("y_gain", 1), ""),
-        ("X Offset", f"{calibration_settings.get('x_offset', 0)} V", ""),
-        ("Y Offset", f"{calibration_settings.get('y_offset', 0)} V", ""),
-        ("Invert X", calibration_settings.get("invert_x", False), ""),
-        ("Invert Y", calibration_settings.get("invert_y", False), ""),
+        (f"Gain {ch1_name}", calibration_settings.get("x_gain", 1), ""),
+        (f"Gain {ch2_name}", calibration_settings.get("y_gain", 1), ""),
+        (f"Offset {ch1_name}", f"{calibration_settings.get('x_offset', 0)} V", ""),
+        (f"Offset {ch2_name}", f"{calibration_settings.get('y_offset', 0)} V", ""),
+        (f"Invert {ch1_name}", calibration_settings.get("invert_x", False), ""),
+        (f"Invert {ch2_name}", calibration_settings.get("invert_y", False), ""),
         ("Normalize", calibration_settings.get("normalize", False), ""),
     ]
     return generate_latex_table(rows, caption="Signal Calibration", headers=("Value", ""))
 
 
-def generate_comparison_latex(comparison_data):
+def generate_comparison_latex(comparison_data, ch1_name="CH1", ch2_name="CH2"):
     rows = [
         ("Snapshot", comparison_data.get("snapshot_name", "-"), ""),
         ("Current file", comparison_data.get("current_file", "-"), ""),
         ("Saved file", comparison_data.get("saved_file", "-"), ""),
-        ("Delta Vpp X", f"{comparison_data.get('delta_vpp_x', 0)} V", ""),
-        ("Delta Vpp Y", f"{comparison_data.get('delta_vpp_y', 0)} V", ""),
-        ("Delta Freq X", f"{comparison_data.get('delta_freq_x', 0)} {comparison_data.get('delta_freq_x_unit', 'Hz')}", ""),
-        ("Delta Freq Y", f"{comparison_data.get('delta_freq_y', 0)} {comparison_data.get('delta_freq_y_unit', 'Hz')}", ""),
+        (f"Delta Vpp {ch1_name}", f"{comparison_data.get('delta_vpp_x', 0)} V", ""),
+        (f"Delta Vpp {ch2_name}", f"{comparison_data.get('delta_vpp_y', 0)} V", ""),
+        (f"Delta Freq {ch1_name}", f"{comparison_data.get('delta_freq_x', 0)} {comparison_data.get('delta_freq_x_unit', 'Hz')}", ""),
+        (f"Delta Freq {ch2_name}", f"{comparison_data.get('delta_freq_y', 0)} {comparison_data.get('delta_freq_y_unit', 'Hz')}", ""),
     ]
     return generate_latex_table(rows, caption="Snapshot Comparison", headers=("Value", ""))
 
 
-def generate_current_latex(current_data):
+def generate_current_latex(current_data, ch1_name="CH1", ch2_name="CH2"):
     method_labels = {
         "resistor": "Resistor (i(t)=v(t)/R)",
         "capacitor": "Capacitor (i(t)=C dv(t)/dt)",
@@ -311,7 +357,7 @@ def generate_current_latex(current_data):
     }
     method = current_data.get("method", "resistor")
     rows = [
-        ("Channel", current_data.get("channel", "X"), ""),
+        ("Channel", _channel_label(current_data.get("channel", "X"), ch1_name, ch2_name), ""),
         ("Method", method_labels.get(method, method), ""),
         ("Component value", f"{current_data.get('component_value', 0)} {unit_labels.get(method, '')}", ""),
         ("Initial condition", current_data.get("inductor_initial_mode", "zero"), ""),
@@ -331,10 +377,10 @@ def generate_current_latex(current_data):
     return generate_latex_table(rows, caption="Calculated Current Analysis", headers=("Value", ""))
 
 
-def generate_transfer_latex(transfer_data):
+def generate_transfer_latex(transfer_data, ch1_name="CH1", ch2_name="CH2"):
     rows = [
-        ("Input channel", transfer_data.get("input_channel", "X"), ""),
-        ("Output channel", transfer_data.get("output_channel", "Y"), ""),
+        ("Input channel", _channel_label(transfer_data.get("input_channel", "X"), ch1_name, ch2_name), ""),
+        ("Output channel", _channel_label(transfer_data.get("output_channel", "Y"), ch1_name, ch2_name), ""),
         ("Vin RMS", f"{transfer_data.get('vin_rms', 0)} V", ""),
         ("Vout RMS", f"{transfer_data.get('vout_rms', 0)} V", ""),
         ("Vin Vpp", f"{transfer_data.get('vin_vpp', 0)} V", ""),
@@ -350,9 +396,9 @@ def generate_transfer_latex(transfer_data):
     return generate_latex_table(rows, caption="Transfer Analysis", headers=("Value", ""))
 
 
-def generate_total_current_latex(total_current_data):
+def generate_total_current_latex(total_current_data, ch1_name="CH1", ch2_name="CH2"):
     rows = [
-        ("Voltage channel", total_current_data.get("voltage_channel", "X"), ""),
+        ("Voltage channel", _channel_label(total_current_data.get("voltage_channel", "X"), ch1_name, ch2_name), ""),
         ("Combination mode", total_current_data.get("combination_mode", "parallel"), ""),
         ("Frequency tolerance", f"{total_current_data.get('frequency_tolerance_percent', 5)} %", ""),
         ("Saved currents", total_current_data.get("saved_count", 0), ""),
@@ -372,3 +418,45 @@ def generate_total_current_latex(total_current_data):
         ("Series mismatch RMS", f"{total_current_data.get('series_mismatch_rms', 0)} A", ""),
     ]
     return generate_latex_table(rows, caption="Total Current Analysis", headers=("Value", ""))
+
+
+def generate_config_latex(config, ch1_name="CH1", ch2_name="CH2"):
+    rows = [
+        (f"Volt/div {ch1_name}", f"{config.get('volts_div', [0, 0])[0]} {config.get('volt_units', ['V', 'V'])[0]}/div", ""),
+        (f"Volt/div {ch2_name}", f"{config.get('volts_div', [0, 0])[1]} {config.get('volt_units', ['V', 'V'])[1]}/div", ""),
+        (f"Probe {ch1_name}", f"{config.get('probe', [1, 1])[0]}x", ""),
+        (f"Probe {ch2_name}", f"{config.get('probe', [1, 1])[1]}x", ""),
+        (f"Coupling {ch1_name}", config.get('coupling', ['DC', 'DC'])[0], ""),
+        (f"Coupling {ch2_name}", config.get('coupling', ['DC', 'DC'])[1], ""),
+        ("Time/div", f"{config.get('time_div', '')} {config.get('time_units', 'S')}/div", ""),
+        ("Trigger", f"{config.get('trigger_type', '')} / {config.get('trigger_edge', '')} / {config.get('trigger_channel', '')}", ""),
+    ]
+    return generate_latex_table(rows, caption="Oscilloscope Configuration", headers=("Value", ""))
+
+
+def generate_current_snapshots_latex(snapshots):
+    rows = []
+    for s in snapshots:
+        rows.append((s.get("name", "-"), f"{s.get('current_rms', 0)} A ({s.get('frequency_hz', 0)} Hz)", ""))
+    if not rows:
+        rows.append(("No saved calculations", "-", ""))
+    return generate_latex_table(rows, caption="Saved Current Calculations", headers=("Name", "Value"))
+
+
+def generate_xy_latex(xy_data, ch1_name="CH1", ch2_name="CH2"):
+    rows = [
+        ("Samples", str(xy_data.get("sample_count", "-")), ""),
+        (f"{ch1_name} range", f"{xy_data.get('x_min', '-')} to {xy_data.get('x_max', '-')} V", ""),
+        (f"{ch2_name} range", f"{xy_data.get('y_min', '-')} to {xy_data.get('y_max', '-')} V", ""),
+        ("Correlation", str(xy_data.get("correlation_coefficient", "-")), ""),
+    ]
+    return generate_latex_table(rows, caption="X-Y Mode Analysis", headers=("Value", ""))
+
+
+def generate_snapshots_latex(snapshots):
+    rows = []
+    for s in snapshots:
+        rows.append((s.get("name", "-"), f"{s.get('file_name', '-')} / {s.get('created_at', '-')}", ""))
+    if not rows:
+        rows.append(("No saved snapshots", "-", ""))
+    return generate_latex_table(rows, caption="Saved Snapshots", headers=("Name", "Details"))

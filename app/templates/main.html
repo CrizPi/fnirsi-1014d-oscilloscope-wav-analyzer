@@ -1,0 +1,1367 @@
+﻿<!-- FNIRSI 1014D Oscilloscope Analyzer - Professional UI -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FNIRSI 1014D Analyzer {{ app_version }}</title>
+    <link href="{{ url_for('static', filename='opencode.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+    <link rel="icon" href="/icon.png" type="image/png">
+</head>
+<body>
+<div id="loadingOverlay" class="loading-overlay" aria-hidden="true">
+    <div class="loading-card">
+        <div class="loading-scope-badge">FNIRSI 1014D</div>
+        <div class="loading-sweep">
+            <div class="loading-sweep-bar"></div>
+            <div class="loading-sweep-bar"></div>
+        </div>
+        <div class="loading-spinner"></div>
+        <div class="loading-title">Processing Waveform</div>
+        <div class="loading-steps">
+            <div class="loading-step">
+                <span class="loading-step-dot"></span>
+                <span class="loading-step-text">Reading file</span>
+            </div>
+            <div class="loading-step">
+                <span class="loading-step-dot"></span>
+                <span class="loading-step-text">Analyzing data</span>
+            </div>
+            <div class="loading-step">
+                <span class="loading-step-dot"></span>
+                <span class="loading-step-text">Generating display</span>
+            </div>
+        </div>
+        <div class="loading-subtitle">Acquiring waveform<span class="loading-ellipsis"></span></div>
+    </div>
+</div>
+
+<div id="channelModal" class="modal-overlay" tabindex="-1" aria-hidden="true">
+    <div class="modal-card">
+        <div class="modal-heading">Configure Import Channels</div>
+        <p class="modal-subheading">Set the name and signal options for each channel before importing.</p>
+        <div class="modal-body">
+            <div class="modal-channel-group">
+                <div class="modal-channel-group-head">
+                    <span class="modal-channel-dot" style="background:var(--ch1)"></span>
+                    <span class="modal-channel-group-title">Channel 1</span>
+                </div>
+                <label class="modal-field">
+                    <span class="modal-field-label">Channel name</span>
+                    <input type="text" id="modal-ch1" class="form-input" value="CH1" maxlength="24" autocomplete="off" spellcheck="false">
+                </label>
+                <label class="modal-field modal-field-check">
+                    <input type="checkbox" id="modal-invert-ch1">
+                    <span class="modal-field-check-label">Invert signal</span>
+                </label>
+            </div>
+            <div class="modal-channel-group">
+                <div class="modal-channel-group-head">
+                    <span class="modal-channel-dot" style="background:var(--ch2)"></span>
+                    <span class="modal-channel-group-title">Channel 2</span>
+                </div>
+                <label class="modal-field">
+                    <span class="modal-field-label">Channel name</span>
+                    <input type="text" id="modal-ch2" class="form-input" value="CH2" maxlength="24" autocomplete="off" spellcheck="false">
+                </label>
+                <label class="modal-field modal-field-check">
+                    <input type="checkbox" id="modal-invert-ch2">
+                    <span class="modal-field-check-label">Invert signal</span>
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button id="modal-cancel" class="btn">Cancel</button>
+            <button id="modal-continue" class="btn btn-primary">Continue</button>
+        </div>
+    </div>
+</div>
+
+<div id="app">
+    <!-- ===== TOP TOOLBAR ===== -->
+    <header class="toolbar">
+        <div class="toolbar-brand">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            <span>FNIRSI 1014D Analyzer</span>
+        </div>
+        <form method="POST" id="upload-file-form" enctype="multipart/form-data" class="no-ajax file-upload-widget" data-loaded="{{ 'true' if file else 'false' }}">
+            <input type="file" id="file" name="file" accept=".wav" required>
+            <label for="file" id="file-dropzone" class="file-dropzone{% if file %} is-loaded{% endif %}">
+                <span class="file-empty">
+                    <svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M16 6v12M8 6v12M20 10v4M4 10v4"/></svg>
+                    <span>Drop a .wav file here or click to browse</span>
+                </span>
+                <span class="file-loaded">
+                    <svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span class="file-loaded-name" title="{{ file_name }}">{{ file_name }}</span>
+                </span>
+            </label>
+            <button type="submit" name="upload-file" class="file-submit-btn" aria-label="Upload file"></button>
+        </form>
+        <div class="toolbar-separator"></div>
+        <form method="POST">
+            <button class="toolbar-btn" type="submit" name="reset" title="Reset workspace">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+            </button>
+        </form>
+    </header>
+
+    <!-- ===== MAIN LAYOUT ===== -->
+    <div class="main-layout">
+        <!-- ===== SIDEBAR ===== -->
+        <nav class="sidebar">
+            <div class="sidebar-section">
+                <div class="sidebar-label">Overview</div>
+                <button class="sidebar-item active" data-panel="main">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 16l4-8 4 4 4-6"/></svg>
+                    Main Signal
+                </button>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Analysis Tools</div>
+                <button class="sidebar-item" data-panel="measurements" {% if not file %}disabled{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z"/></svg>
+                    Measurements
+                </button>
+                <button class="sidebar-item" data-panel="math" {% if not file %}disabled{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z"/></svg>
+                    Math
+                </button>
+                <button class="sidebar-item" data-panel="fft" {% if not file %}disabled{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 15l4-8 4 8 4-11 4 8"/></svg>
+                    FFT Spectrum
+                </button>
+                <button class="sidebar-item" data-panel="digital" {% if not file %}disabled{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+                    Digital
+                </button>
+                <button class="sidebar-item" data-panel="cursor" {% if not file %}disabled{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2h-5l-1 7h7l-1-7zM9 16l3 6 3-6"/></svg>
+                    Cursors
+                </button>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Signal Processing</div>
+                <button class="sidebar-item" data-panel="calculus" {% if not file %}disabled{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16M4 4h16"/><path d="M4 12h16"/></svg>
+                    Derivative &amp; Integral
+                </button>
+                <button class="sidebar-item" data-panel="current" {% if not file %}disabled{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                    Current
+                </button>
+                <button class="sidebar-item" data-panel="transfer" {% if not file %}disabled{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    Vin / Vout
+                </button>
+                <button class="sidebar-item" data-panel="xy" {% if not file %}disabled{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2v20"/></svg>
+                    X-Y Mode
+                </button>
+                <button class="sidebar-item" data-panel="correlation" {% if not file %}disabled{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v16h16"/><path d="M4 16l4-8 4 4 4-6 4 4"/></svg>
+                    Correlation
+                </button>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Configuration</div>
+                <button class="sidebar-item" data-panel="snapshots" {% if not file %}disabled{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                    Snapshots
+                </button>
+            </div>
+            <div class="sidebar-version">
+                <span class="sidebar-version-line">{{ app_version }}</span>
+            </div>
+        </nav>
+
+        <!-- ===== CONTENT ===== -->
+        <main class="content">
+
+            <!-- ===== ALERT HOST ===== -->
+            <!-- FRAGMENT:alert-host:start -->
+            <div id="alertHost">
+                {% if error_message %}
+                <div class="alert">{{ error_message }}</div>
+                {% endif %}
+            </div>
+            <!-- FRAGMENT:alert-host:end -->
+
+            <!-- ============================================================ -->
+            <!-- PANEL: MAIN SIGNAL                                           -->
+            <!-- ============================================================ -->
+            <div class="content-panel active" id="panel-main">
+                <div class="content-panel-header">
+                    <h2>Main Signal Display</h2>
+                </div>
+
+                <!-- FRAGMENT:measures-panel:start -->
+                <div id="measuresPanel">
+                    <section class="section-card">
+                        <h3>Oscilloscope Configuration</h3>
+                        <div class="section-actions">
+                            <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_config_latex') }}', 'Configuration LaTeX copied.')" {% if not file %}disabled{% endif %}>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                                Copy LaTeX
+                            </button>
+                        </div>
+                        <table class="data-table compact-table">
+                            <thead><tr><th>Parameter</th><th>{{ ch1_name }}</th><th>{{ ch2_name }}</th></tr></thead>
+                            <tbody>
+                                <tr><td>Volt/div</td><td>{{ config.volts_div[0] }} {{ config.volt_units[0] }}/div</td><td>{{ config.volts_div[1] }} {{ config.volt_units[1] }}/div</td></tr>
+                                <tr><td>Probe</td><td>{{ config.probe[0] }}x</td><td>{{ config.probe[1] }}x</td></tr>
+                                <tr><td>Coupling</td><td>{{ config.coupling[0] }}</td><td>{{ config.coupling[1] }}</td></tr>
+                                <tr><td>Time/div</td><td colspan="2">{{ config.time_div }} {{ config.time_units }}/div</td></tr>
+                                <tr><td>Trigger</td><td colspan="2">{{ config.trigger_type }} / {{ config.trigger_edge }} / {{ config.trigger_channel }}</td></tr>
+                            </tbody>
+                        </table>
+                    </section>
+
+                    <section class="section-card">
+                        <h3>Measurements</h3>
+                        <div class="section-actions">
+                            <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_latex') }}', 'LaTeX copied.')" {% if not file %}disabled{% endif %}>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                                Copy LaTeX
+                            </button>
+                        </div>
+                        <table class="data-table">
+                            <thead><tr><th>Parameter</th><th>{{ ch1_name }}</th><th>{{ ch2_name }}</th><th>Unidad</th></tr></thead>
+                            <tbody>
+                                <tr><td>Vmax</td><td class="text-ch1">{{ measures.Vmax[0] }}</td><td class="text-ch2">{{ measures.Vmax[1] }}</td><td>V</td></tr>
+                                <tr><td>Vmin</td><td class="text-ch1">{{ measures.Vmin[0] }}</td><td class="text-ch2">{{ measures.Vmin[1] }}</td><td>V</td></tr>
+                                <tr><td>Vavg</td><td class="text-ch1">{{ measures.Vavg[0] }}</td><td class="text-ch2">{{ measures.Vavg[1] }}</td><td>V</td></tr>
+                                <tr><td>Vrms</td><td class="text-ch1">{{ measures.Vrms[0] }}</td><td class="text-ch2">{{ measures.Vrms[1] }}</td><td>V</td></tr>
+                                <tr><td>Vpp</td><td class="text-ch1">{{ measures.Vpp[0] }}</td><td class="text-ch2">{{ measures.Vpp[1] }}</td><td>V</td></tr>
+                                <tr><td>Vp</td><td class="text-ch1">{{ measures.Vp[0] }}</td><td class="text-ch2">{{ measures.Vp[1] }}</td><td>V</td></tr>
+                                <tr><td>Freq</td><td class="text-ch1">{{ measures.Freq[0] }}</td><td class="text-ch2">{{ measures.Freq[1] }}</td><td>{{ measures.freq_units[0] }}</td></tr>
+                                <tr><td>Cycle</td><td class="text-ch1">{{ measures.Cycle[0] }}</td><td class="text-ch2">{{ measures.Cycle[1] }}</td><td>{{ measures.cycle_units[0] }}</td></tr>
+                                <tr><td>Time+</td><td class="text-ch1">{{ measures['Time+'][0] }}</td><td class="text-ch2">{{ measures['Time+'][1] }}</td><td>{{ measures.time_plus_units[0] }}</td></tr>
+                                <tr><td>Time-</td><td class="text-ch1">{{ measures['Time-'][0] }}</td><td class="text-ch2">{{ measures['Time-'][1] }}</td><td>{{ measures.time_minus_units[0] }}</td></tr>
+                                <tr><td>Duty+</td><td class="text-ch1">{{ measures['Duty+'][0] }}</td><td class="text-ch2">{{ measures['Duty+'][1] }}</td><td>%</td></tr>
+                                <tr><td>Duty-</td><td class="text-ch1">{{ measures['Duty-'][0] }}</td><td class="text-ch2">{{ measures['Duty-'][1] }}</td><td>%</td></tr>
+                            </tbody>
+                        </table>
+                    </section>
+                </div>
+                <!-- FRAGMENT:measures-panel:end -->
+
+                <section class="section-card">
+                    <div class="graph-header">
+                        <span class="graph-header-title">{{ file_name }}</span>
+                        <div class="graph-header-labels">
+                            <span class="graph-label"><span class="graph-swatch" style="background:{{ ch1_color }}"></span>{{ ch1_name }} {{ ch1_vdiv_str }}</span>
+                            <span class="graph-label"><span class="graph-swatch" style="background:{{ ch2_color }}"></span>{{ ch2_name }} {{ ch2_vdiv_str }}</span>
+                            {% if math_operation %}<span class="graph-label"><span class="graph-swatch" style="background:{{ math_color }}"></span>MATH{% if math_vdiv_str %} {{ math_vdiv_str }}{% endif %}</span>{% endif %}
+                            {% if tdiv_str %}<span class="graph-label graph-label-time">Time {{ tdiv_str }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="graph-card" style="margin-bottom:0;">
+                        <a class="graph-dl-btn" href="{{ url_for('download_graph') }}" download {% if not file %}style="display:none"{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                        <img src="data:image/png;base64,{{ grafica }}" alt="Main oscilloscope graph">
+                    </div>
+                </section>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- PANEL: MEASUREMENTS                                           -->
+            <!-- ============================================================ -->
+            <div class="content-panel" id="panel-measurements">
+                <div class="content-panel-header">
+                    <h2>Automatic Measurements</h2>
+                </div>
+
+                <section class="section-card">
+                    <h3>Statistical Analysis</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" name="statistics_apply" value="1" form="stat-form" {% if not file %}disabled{% endif %}>Apply Statistics</button>
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_statistics_latex') }}', 'Statistics LaTeX copied.')" {% if not file or not statistics_data.enabled %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <form method="POST" id="stat-form" style="display:none;"><input type="hidden" name="statistics_apply" value="1"></form>
+                    <div id="module-stat" class="stat" style="display:block;">
+                        <table class="data-table">
+                            <thead><tr><th>Parameter</th><th>{{ ch1_name }}</th><th>{{ ch2_name }}</th><th>MATH</th><th>Unidad</th></tr></thead>
+                            <tbody>
+                                <tr><td>Mean</td><td class="text-ch1">{{ statistics_data.X.mean }}</td><td class="text-ch2">{{ statistics_data.Y.mean }}</td><td>{% if statistics_data.math_enabled %}{{ statistics_data.MATH.mean }}{% else %}-{% endif %}</td><td>V</td></tr>
+                                <tr><td>Standard deviation</td><td class="text-ch1">{{ statistics_data.X.std_dev }}</td><td class="text-ch2">{{ statistics_data.Y.std_dev }}</td><td>{% if statistics_data.math_enabled %}{{ statistics_data.MATH.std_dev }}{% else %}-{% endif %}</td><td>V</td></tr>
+                                <tr><td>Variance</td><td class="text-ch1">{{ statistics_data.X.variance }}</td><td class="text-ch2">{{ statistics_data.Y.variance }}</td><td>{% if statistics_data.math_enabled %}{{ statistics_data.MATH.variance }}{% else %}-{% endif %}</td><td>V²</td></tr>
+                                <tr><td>Median</td><td class="text-ch1">{{ statistics_data.X.median }}</td><td class="text-ch2">{{ statistics_data.Y.median }}</td><td>{% if statistics_data.math_enabled %}{{ statistics_data.MATH.median }}{% else %}-{% endif %}</td><td>V</td></tr>
+                                <tr><td>Minimum</td><td class="text-ch1">{{ statistics_data.X.min }}</td><td class="text-ch2">{{ statistics_data.Y.min }}</td><td>{% if statistics_data.math_enabled %}{{ statistics_data.MATH.min }}{% else %}-{% endif %}</td><td>V</td></tr>
+                                <tr><td>Maximum</td><td class="text-ch1">{{ statistics_data.X.max }}</td><td class="text-ch2">{{ statistics_data.Y.max }}</td><td>{% if statistics_data.math_enabled %}{{ statistics_data.MATH.max }}{% else %}-{% endif %}</td><td>V</td></tr>
+                                <tr><td>Range</td><td class="text-ch1">{{ statistics_data.X.range }}</td><td class="text-ch2">{{ statistics_data.Y.range }}</td><td>{% if statistics_data.math_enabled %}{{ statistics_data.MATH.range }}{% else %}-{% endif %}</td><td>V</td></tr>
+                                <tr><td>RMS</td><td class="text-ch1">{{ statistics_data.X.rms }}</td><td class="text-ch2">{{ statistics_data.Y.rms }}</td><td>{% if statistics_data.math_enabled %}{{ statistics_data.MATH.rms }}{% else %}-{% endif %}</td><td>V</td></tr>
+                                <tr><td>Peak-to-peak</td><td class="text-ch1">{{ statistics_data.X.peak_to_peak }}</td><td class="text-ch2">{{ statistics_data.Y.peak_to_peak }}</td><td>{% if statistics_data.math_enabled %}{{ statistics_data.MATH.peak_to_peak }}{% else %}-{% endif %}</td><td>V</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="section-card">
+                    <h3>Cycle Analysis</h3>
+                    <div class="section-actions">
+                        <form method="POST" class="section-actions" style="margin:0;">
+                            <input type="hidden" name="cycle_apply" value="1">
+                            <div class="form-group">
+                                <label>Channel</label>
+                                <select name="cycle_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                    <option value="X" {% if cycle_data.channel == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                    <option value="Y" {% if cycle_data.channel == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                    <option value="MATH" {% if cycle_data.channel == 'MATH' %}selected{% endif %}>MATH</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary btn-sm" type="submit" {% if not file %}disabled{% endif %}>Apply</button>
+                        </form>
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_cycle_latex') }}', 'Cycle LaTeX copied.')" {% if not file or not cycle_data.cycle_count %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <div id="module-cycle" class="cycle" style="display:block;">
+                        <div class="cursor-measurements">
+                            <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Detected cycles</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ cycle_data.cycle_count }}</span></div></div></div>
+                            <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Average frequency</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ cycle_data.avg_frequency }} {{ cycle_data.avg_frequency_unit }}</span></div></div></div>
+                            <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Average period</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ cycle_data.avg_period }} {{ cycle_data.avg_period_unit }}</span></div></div></div>
+                            <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Average Vpp</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ cycle_data.avg_vpp }} V</span></div></div></div>
+                            <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Average RMS</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ cycle_data.avg_rms }} V</span></div></div></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="section-card">
+                    <h3>Advanced Measurements</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" name="advanced_apply" value="1" form="adv-form" {% if not file %}disabled{% endif %}>Calculate</button>
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_advanced_latex') }}', 'Advanced LaTeX copied.')" {% if not file or not advanced_data.enabled %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <form method="POST" id="adv-form" style="display:none;"><input type="hidden" name="advanced_apply" value="1"></form>
+                    <div id="module-advanced" class="advanced" style="display:block;">
+                        <table class="data-table">
+                            <thead><tr><th>Parameter</th><th>{{ ch1_name }}</th><th>{{ ch2_name }}</th><th>MATH</th><th>Unidad</th></tr></thead>
+                            <tbody>
+                                <tr><td>Rise time</td><td class="text-ch1">{{ advanced_data.X.rise_time }}</td><td class="text-ch2">{{ advanced_data.Y.rise_time }}</td><td>{% if advanced_data.math_enabled %}{{ advanced_data.MATH.rise_time }}{% else %}-{% endif %}</td><td>{{ advanced_data.X.rise_time_unit }}</td></tr>
+                                <tr><td>Fall time</td><td class="text-ch1">{{ advanced_data.X.fall_time }}</td><td class="text-ch2">{{ advanced_data.Y.fall_time }}</td><td>{% if advanced_data.math_enabled %}{{ advanced_data.MATH.fall_time }}{% else %}-{% endif %}</td><td>{{ advanced_data.X.fall_time_unit }}</td></tr>
+                                <tr><td>Overshoot</td><td class="text-ch1">{{ advanced_data.X.overshoot }}</td><td class="text-ch2">{{ advanced_data.Y.overshoot }}</td><td>{% if advanced_data.math_enabled %}{{ advanced_data.MATH.overshoot }}{% else %}-{% endif %}</td><td>%</td></tr>
+                                <tr><td>Undershoot</td><td class="text-ch1">{{ advanced_data.X.undershoot }}</td><td class="text-ch2">{{ advanced_data.Y.undershoot }}</td><td>{% if advanced_data.math_enabled %}{{ advanced_data.MATH.undershoot }}{% else %}-{% endif %}</td><td>%</td></tr>
+                                <tr><td>Slew rate</td><td class="text-ch1">{{ advanced_data.X.slew_rate }}</td><td class="text-ch2">{{ advanced_data.Y.slew_rate }}</td><td>{% if advanced_data.math_enabled %}{{ advanced_data.MATH.slew_rate }}{% else %}-{% endif %}</td><td>{{ advanced_data.X.slew_rate_unit }}</td></tr>
+                                <tr><td>Crest factor</td><td class="text-ch1">{{ advanced_data.X.crest_factor }}</td><td class="text-ch2">{{ advanced_data.Y.crest_factor }}</td><td>{% if advanced_data.math_enabled %}{{ advanced_data.MATH.crest_factor }}{% else %}-{% endif %}</td><td></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- PANEL: MATH                                                   -->
+            <!-- ============================================================ -->
+            <div class="content-panel" id="panel-math">
+                <div class="content-panel-header">
+                    <h2>Math Operations</h2>
+                </div>
+                <section class="section-card">
+                    <h3>Channel Operations</h3>
+                    <form method="POST" id="math-form">
+                        <div class="section-actions">
+                            <button class="btn btn-sm" type="submit" name="math_op" value="add" {% if not file %}disabled{% endif %}>X + Y</button>
+                            <button class="btn btn-sm" type="submit" name="math_op" value="sub" {% if not file %}disabled{% endif %}>X - Y</button>
+                            <button class="btn btn-sm" type="submit" name="math_op" value="mul" {% if not file %}disabled{% endif %}>X × Y</button>
+                            <button class="btn btn-sm" type="submit" name="math_op" value="div" {% if not file %}disabled{% endif %}>X ÷ Y</button>
+                        </div>
+                    </form>
+                    <p class="text-muted" style="margin-top:8px;">{% if math_operation %}Active: <strong class="text-accent">{{ math_operation }}</strong>{% else %}No active operation{% endif %}</p>
+                </section>
+
+                <section class="section-card">
+                    <h3>Math Measures</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_math_latex') }}', 'Math LaTeX copied.')" {% if not file or not math_operation %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <table class="data-table">
+                        <thead><tr><th>Parameter</th><th>MATH</th><th>Unidad</th></tr></thead>
+                        <tbody>
+                            <tr><td>Vmax</td><td class="text-math">{{ math_measures.Vmax }}</td><td>V</td></tr>
+                            <tr><td>Vmin</td><td class="text-math">{{ math_measures.Vmin }}</td><td>V</td></tr>
+                            <tr><td>Vavg</td><td class="text-math">{{ math_measures.Vavg }}</td><td>V</td></tr>
+                            <tr><td>Vrms</td><td class="text-math">{{ math_measures.Vrms }}</td><td>V</td></tr>
+                            <tr><td>Vpp</td><td class="text-math">{{ math_measures.Vpp }}</td><td>V</td></tr>
+                            <tr><td>Vp</td><td class="text-math">{{ math_measures.Vp }}</td><td>V</td></tr>
+                            <tr><td>Freq</td><td class="text-math">{{ math_measures.Freq }}</td><td>{{ math_measures.freq_unit }}</td></tr>
+                            <tr><td>Cycle</td><td class="text-math">{{ math_measures.Cycle }}</td><td>{{ math_measures.cycle_unit }}</td></tr>
+                            <tr><td>Time+</td><td class="text-math">{{ math_measures['Time+'] }}</td><td>{{ math_measures.time_plus_unit }}</td></tr>
+                            <tr><td>Time-</td><td class="text-math">{{ math_measures['Time-'] }}</td><td>{{ math_measures.time_minus_unit }}</td></tr>
+                            <tr><td>Duty+</td><td class="text-math">{{ math_measures['Duty+'] }}</td><td>%</td></tr>
+                            <tr><td>Duty-</td><td class="text-math">{{ math_measures['Duty-'] }}</td><td>%</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section class="section-card">
+                    <div class="graph-header">
+                        <span class="graph-header-title">Math Graph</span>
+                        <div class="graph-header-labels">
+                            {% if math_operation %}<span class="graph-label"><span class="graph-swatch" style="background:{{ math_color }}"></span>MATH {{ math_operation }}{% if math_vdiv_str %} {{ math_vdiv_str }}{% endif %}</span>{% endif %}
+                            {% if tdiv_str %}<span class="graph-label graph-label-time">Time {{ tdiv_str }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="graph-card" style="margin-bottom:0;">
+                        <a class="graph-dl-btn" href="{{ url_for('download_math_graph') }}" download {% if not file or not math_operation %}style="display:none"{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                        <img src="data:image/png;base64,{{ grafica_math }}" alt="MATH graph">
+                    </div>
+                </section>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- PANEL: FFT                                                    -->
+            <!-- ============================================================ -->
+            <div class="content-panel" id="panel-fft">
+                <div class="content-panel-header">
+                    <h2>FFT Spectrum Analysis</h2>
+                </div>
+                <section class="section-card">
+                    <h3>FFT Parameters</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary" type="submit" form="fft-form" {% if not file %}disabled{% endif %}>Apply FFT</button>
+                    </div>
+                    <form method="POST" id="fft-form" class="form-row">
+                        <input type="hidden" name="fft_apply" value="1">
+                        <div class="form-group">
+                            <label>Channel</label>
+                            <select name="fft_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                <option value="X" {% if fft_data.channel == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                <option value="Y" {% if fft_data.channel == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if fft_data.channel == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Scale</label>
+                            <select name="fft_scale" class="form-select" {% if not file %}disabled{% endif %}>
+                                <option value="linear" {% if fft_data.scale == 'linear' %}selected{% endif %}>Linear</option>
+                                <option value="log" {% if fft_data.scale == 'log' %}selected{% endif %}>Logarithmic</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Window</label>
+                            <select name="fft_window_type" class="form-select" {% if not file %}disabled{% endif %}>
+                                <option value="rectangular" {% if fft_data.window_type == 'rectangular' %}selected{% endif %}>Rectangular</option>
+                                <option value="hann" {% if fft_data.window_type == 'hann' %}selected{% endif %}>Hann</option>
+                                <option value="hamming" {% if fft_data.window_type == 'hamming' %}selected{% endif %}>Hamming</option>
+                                <option value="blackman" {% if fft_data.window_type == 'blackman' %}selected{% endif %}>Blackman</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Max Freq (Hz)</label>
+                            <input type="number" step="any" min="0" name="fft_max_frequency" value="{{ fft_data.max_frequency }}" class="form-input" placeholder="Auto" {% if not file %}disabled{% endif %}>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="section-card" id="module-fft">
+                    <h3>FFT Results</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_fft_latex') }}', 'FFT LaTeX copied.')" {% if not file or not fft_data.enabled %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <div class="cursor-measurements">
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Channel</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{% if fft_data.channel == 'X' %}{{ ch1_name }}{% elif fft_data.channel == 'Y' %}{{ ch2_name }}{% else %}{{ fft_data.channel }}{% endif %}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Dominant frequency</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{% if fft_data.enabled %}{{ fft_data.dominant_frequency }} {{ fft_data.dominant_frequency_unit }}{% else %}Pending{% endif %}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Amplitude</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{% if fft_data.enabled %}{{ "%.6f"|format(fft_data.dominant_magnitude) }} V{% else %}Pending{% endif %}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">THD</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{% if fft_data.enabled %}{{ fft_data.thd_percent }} %{% else %}Pending{% endif %}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Window</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ fft_data.window_type }}</span></div></div></div>
+                    </div>
+                    <div class="grid-two" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px;">
+                        <div>
+                            <h4 class="text-muted" style="margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Top 5 Peaks</h4>
+                            <table class="data-table compact-table">
+                                <thead><tr><th>#</th><th>Frequency</th><th>Amplitude</th></tr></thead>
+                                <tbody>
+                                    {% for peak in fft_data.top_peaks %}
+                                    <tr><td>{{ loop.index }}</td><td>{{ peak.frequency }} {{ peak.frequency_unit }}</td><td>{{ peak.magnitude }} V</td></tr>
+                                    {% else %}
+                                    <tr><td colspan="3" class="text-muted">Pending</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div>
+                            <h4 class="text-muted" style="margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Harmonics</h4>
+                            <table class="data-table compact-table">
+                                <thead><tr><th>Order</th><th>Frequency</th><th>Amplitude</th></tr></thead>
+                                <tbody>
+                                    {% for harmonic in fft_data.harmonics %}
+                                    <tr><td>{{ harmonic.order }}</td><td>{{ harmonic.frequency }} {{ harmonic.frequency_unit }}</td><td>{{ harmonic.magnitude }} V</td></tr>
+                                    {% else %}
+                                    <tr><td colspan="3" class="text-muted">Pending</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="section-card">
+                    <div class="graph-header">
+                        <span class="graph-header-title">FFT Graph</span>
+                        <div class="graph-header-labels">
+                            <span class="graph-label"><span class="graph-swatch" style="background:{{ ch1_color if fft_data.channel == 'X' else ch2_color if fft_data.channel == 'Y' else math_color }}"></span>{{ 'CH1' if fft_data.channel == 'X' else 'CH2' if fft_data.channel == 'Y' else fft_data.channel }}</span>
+                            {% if fft_data.mag_div_str %}<span class="graph-label">{{ fft_data.mag_div_str }}</span>{% endif %}
+                            {% if fft_data.hz_div_str %}<span class="graph-label graph-label-time">{{ fft_data.hz_div_str }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="graph-card" style="margin-bottom:0;">
+                        <a class="graph-dl-btn" href="{{ url_for('download_fft_graph') }}" download {% if not file or not fft_data.enabled %}style="display:none"{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                        <img src="data:image/png;base64,{{ fft_graph }}" alt="FFT spectrum graph">
+                    </div>
+                </section>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- PANEL: DIGITAL                                                -->
+            <!-- ============================================================ -->
+            <div class="content-panel" id="panel-digital">
+                <div class="content-panel-header">
+                    <h2>Digital Electronics Tools</h2>
+                </div>
+                <!-- FRAGMENT:module-digital:start -->
+                <section class="section-card">
+                    <h3>PWM Analysis</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" form="pwm-form" {% if not file %}disabled{% endif %}>Analyze PWM</button>
+                    </div>
+                    <form method="POST" id="pwm-form" class="form-row">
+                        <input type="hidden" name="digital_pwm_apply" value="1">
+                        <div class="form-group">
+                            <label>Channel</label>
+                            <select name="digital_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                        <option value="X" {% if digital_data.get('channel') == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                        <option value="Y" {% if digital_data.get('channel') == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if digital_data.get('channel') == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Threshold (V)</label>
+                            <input type="number" step="any" name="digital_threshold" class="form-input" placeholder="Auto" {% if not file %}disabled{% endif %}>
+                        </div>
+                    </form>
+                    <div id="module-digital-pwm" style="display:block;margin-top:12px;">
+                        {% set pwm = digital_data.get('result', {}) if digital_data.get('type') == 'pwm' else {} %}
+                        <div class="cursor-measurements">
+                            <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Frequency</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value" id="pwmFreq">{% if pwm %}{{ "%.2f"|format(pwm.get('frequency_hz', 0)) }} Hz{% else %}—{% endif %}</span></div></div></div>
+                            <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Duty Cycle</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value" id="pwmDuty">{% if pwm %}{{ "%.1f"|format(pwm.get('duty_cycle_percent', 0)) }} %%{% else %}—{% endif %}</span></div></div></div>
+                            <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Period</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value" id="pwmPeriod">{% if pwm %}{{ "%.6f"|format(pwm.get('period_s', 0)) }} s{% else %}—{% endif %}</span></div></div></div>
+                            <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Pulses</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value" id="pwmPulses">{% if pwm %}{{ pwm.get('pulse_count', 0) }}{% else %}—{% endif %}</span></div></div></div>
+                        </div>
+                    </div>
+                </section>
+                <section class="section-card">
+                    <h3>Edge Detection</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" form="edges-form" {% if not file %}disabled{% endif %}>Detect Edges</button>
+                    </div>
+                    <form method="POST" id="edges-form" class="form-row">
+                        <input type="hidden" name="digital_edges_apply" value="1">
+                        <div class="form-group">
+                            <label>Channel</label>
+                            <select name="digital_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                        <option value="X" {% if digital_data.get('channel') == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                        <option value="Y" {% if digital_data.get('channel') == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if digital_data.get('channel') == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                    </form>
+                    {% set edges = digital_data.get('result', {}) if digital_data.get('type') == 'edges' else {} %}
+                    {% if edges %}
+                    <div class="cursor-measurements" style="margin-top:8px;">
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Rising</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ edges.get('rising_edges', 0) }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Falling</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ edges.get('falling_edges', 0) }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Total</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ edges.get('total_edges', 0) }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Rate</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ "%.1f"|format(edges.get('edge_rate_hz', 0)) }} Hz</span></div></div></div>
+                    </div>
+                    {% endif %}
+                </section>
+                <section class="section-card">
+                    <h3>Pulse Counting</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" form="pulses-form" {% if not file %}disabled{% endif %}>Count Pulses</button>
+                    </div>
+                    <form method="POST" id="pulses-form" class="form-row">
+                        <input type="hidden" name="digital_pulses_apply" value="1">
+                        <div class="form-group">
+                            <label>Channel</label>
+                            <select name="digital_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                        <option value="X" {% if digital_data.get('channel') == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                        <option value="Y" {% if digital_data.get('channel') == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if digital_data.get('channel') == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                    </form>
+                    {% set pulses = digital_data.get('result', {}) if digital_data.get('type') == 'pulses' else {} %}
+                    {% if pulses %}
+                    <div class="cursor-measurements" style="margin-top:8px;">
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Total Pulses</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ pulses.get('pulse_count', 0) }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Rising Edges</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ pulses.get('rising_edges', 0) }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Falling Edges</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ pulses.get('falling_edges', 0) }}</span></div></div></div>
+                    </div>
+                    {% endif %}
+                </section>
+                <section class="section-card">
+                    <h3>Logic Level Analysis</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" form="logic-form" {% if not file %}disabled{% endif %}>Analyze</button>
+                    </div>
+                    <form method="POST" id="logic-form" class="form-row">
+                        <input type="hidden" name="digital_logic_apply" value="1">
+                        <div class="form-group">
+                            <label>Channel</label>
+                            <select name="digital_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                        <option value="X" {% if digital_data.get('channel') == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                        <option value="Y" {% if digital_data.get('channel') == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if digital_data.get('channel') == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                    </form>
+                    {% set logic = digital_data.get('result', {}) if digital_data.get('type') == 'logic' else {} %}
+                    {% if logic %}
+                    <div class="cursor-measurements" style="margin-top:8px;">
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Logic Family</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ logic.get('logic_family', '—') }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">High Level</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ "%.3f"|format(logic.get('high_level_v', 0)) }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Low Level</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ "%.3f"|format(logic.get('low_level_v', 0)) }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Mid Threshold</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ "%.3f"|format(logic.get('mid_threshold_v', 0)) }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Noise Margin High</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ "%.3f"|format(logic.get('noise_margin_high_v', 0)) }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Signal High</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ "%.1f"|format(logic.get('high_percent', 0)) }}%%</span></div></div></div>
+                    </div>
+                    {% endif %}
+                </section>
+                <!-- FRAGMENT:module-digital:end -->
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- PANEL: CURSORS                                                -->
+            <!-- ============================================================ -->
+            <div class="content-panel" id="panel-cursor">
+                <div class="content-panel-header">
+                    <h2>Cursors</h2>
+                </div>
+                <section class="section-card">
+                    <!-- FRAGMENT:module-cursor:start -->
+                    <div id="module-cursor">
+                        <h3>Cursor Measurements</h3>
+                        <div class="section-actions">
+                            <div class="cursor-channel-group" style="display:flex;align-items:center;gap:8px;">
+                                <label class="cursor-channel-label" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);">Mode</label>
+                                <select name="cursor_mode" class="form-select" style="min-width:90px;" {% if not file %}disabled{% endif %}>
+                                    <option value="single" {% if cursor_data.mode != 'dual' %}selected{% endif %}>Single</option>
+                                    <option value="dual" {% if cursor_data.mode == 'dual' %}selected{% endif %}>Dual</option>
+                                </select>
+                            </div>
+                            <div class="cursor-channel-group cursor-single-only" style="display:flex;align-items:center;gap:8px;{% if cursor_data.mode == 'dual' %}display:none{% endif %}">
+                                <label class="cursor-channel-label" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);">Channel</label>
+                                <select name="cursor_channel" class="form-select" style="min-width:90px;" {% if not file %}disabled{% endif %}>
+                                    <option value="X" {% if cursor_data.channel == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                    <option value="Y" {% if cursor_data.channel == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                    <option value="MATH" {% if cursor_data.channel == 'MATH' %}selected{% endif %}>MATH</option>
+                                </select>
+                            </div>
+                            <div class="cursor-dual-only" style="display:flex;align-items:center;gap:8px;{% if cursor_data.mode != 'dual' %}display:none{% endif %}">
+                                <label class="cursor-channel-label" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);">Signal A</label>
+                                <select name="cursor_signal_a" class="form-select" style="min-width:80px;" {% if not file %}disabled{% endif %}>
+                                    <option value="X" {% if cursor_data.signal_a == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                    <option value="Y" {% if cursor_data.signal_a == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                    <option value="MATH" {% if cursor_data.signal_a == 'MATH' %}selected{% endif %}>MATH</option>
+                                </select>
+                                <label class="cursor-channel-label" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);">Signal B</label>
+                                <select name="cursor_signal_b" class="form-select" style="min-width:80px;" {% if not file %}disabled{% endif %}>
+                                    <option value="X" {% if cursor_data.signal_b == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                    <option value="Y" {% if cursor_data.signal_b == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                    <option value="MATH" {% if cursor_data.signal_b == 'MATH' %}selected{% endif %}>MATH</option>
+                                </select>
+                            </div>
+
+                            <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_cursor_latex') }}', 'Cursor LaTeX copied.')" {% if not file or not cursor_data.enabled %}disabled{% endif %}>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                                Copy LaTeX
+                            </button>
+                        </div>
+                        <form method="POST" id="cursor-form" style="display:none;">
+                            <input type="hidden" name="cursor_apply" value="1">
+                            <input type="hidden" name="cursor_channel" id="cursor-channel-hidden" value="{{ cursor_data.channel }}">
+                            <input type="hidden" name="cursor_mode" id="cursor-mode-hidden" value="{% if cursor_data.mode == 'dual' %}dual{% else %}single{% endif %}">
+                            <input type="hidden" name="cursor_signal_a" id="cursor-signal-a-hidden" value="{{ cursor_data.signal_a }}">
+                            <input type="hidden" name="cursor_signal_b" id="cursor-signal-b-hidden" value="{{ cursor_data.signal_b }}">
+                            <input type="hidden" name="cursor_t1" value="{{ cursor_data.t1_input }}">
+                            <input type="hidden" name="cursor_t2" value="{{ cursor_data.t2_input }}">
+                        </form>
+
+                        <div class="cursor-measurements">
+                            <div class="cursor-card" data-cursor="a">
+                                <div class="cursor-card-head">
+                                    <span class="cursor-badge badge-a">A</span>
+                                    <span class="cursor-card-label">Signal A</span>
+                                </div>
+                                <div class="cursor-card-body">
+                                    <div class="cursor-card-row">
+                                        <span class="cursor-card-value">{{ cursor_data.t1 }}</span>
+                                        <span class="cursor-card-unit">s</span>
+                                    </div>
+                                    <div class="cursor-card-sub">V&#8321; = {{ cursor_data.v1 }} V</div>
+                                </div>
+                            </div>
+                            <div class="cursor-card" data-cursor="b">
+                                <div class="cursor-card-head">
+                                    <span class="cursor-badge badge-b">B</span>
+                                    <span class="cursor-card-label">Signal B</span>
+                                </div>
+                                <div class="cursor-card-body">
+                                    <div class="cursor-card-row">
+                                        <span class="cursor-card-value">{{ cursor_data.t2 }}</span>
+                                        <span class="cursor-card-unit">s</span>
+                                    </div>
+                                    <div class="cursor-card-sub">V&#8322; = {{ cursor_data.v2 }} V</div>
+                                </div>
+                            </div>
+                            <div class="cursor-card" data-cursor="dt">
+                                <div class="cursor-card-head">
+                                    <span class="cursor-card-icon">Δt</span>
+                                    <span class="cursor-card-label">Time Diff</span>
+                                </div>
+                                <div class="cursor-card-body">
+                                    <div class="cursor-card-row">
+                                        <span class="cursor-card-value">{{ cursor_data.delta_t }}</span>
+                                        <span class="cursor-card-unit">{{ cursor_data.delta_t_unit }}</span>
+                                    </div>
+                                    <div class="cursor-card-sub">Δt = t&#8322; − t&#8321;</div>
+                                </div>
+                            </div>
+                            <div class="cursor-card cursor-dual-only" data-cursor="phi" {% if cursor_data.mode != 'dual' %}style="display:none"{% endif %}>
+                                <div class="cursor-card-head">
+                                    <span class="cursor-card-icon">Δφ</span>
+                                    <span class="cursor-card-label">Phase Shift</span>
+                                </div>
+                                <div class="cursor-card-body">
+                                    <div class="cursor-card-row">
+                                        <span class="cursor-card-value">{{ cursor_data.delta_phi }}</span>
+                                        <span class="cursor-card-unit">°</span>
+                                    </div>
+                                    <div class="cursor-card-sub">Δφ = (Δt / T) × 360°</div>
+                                </div>
+                            </div>
+                            <div class="cursor-card cursor-single-only" data-cursor="dv">
+                                <div class="cursor-card-head">
+                                    <span class="cursor-card-icon">ΔV</span>
+                                    <span class="cursor-card-label">Voltage Diff</span>
+                                </div>
+                                <div class="cursor-card-body">
+                                    <div class="cursor-card-row">
+                                        <span class="cursor-card-value">{{ cursor_data.delta_v }}</span>
+                                        <span class="cursor-card-unit">V</span>
+                                    </div>
+                                    <div class="cursor-card-sub">ΔV = V&#8322; − V&#8321;</div>
+                                </div>
+                            </div>
+                            <div class="cursor-card" data-cursor="freq">
+                                <div class="cursor-card-head">
+                                    <span class="cursor-card-icon">f</span>
+                                    <span class="cursor-card-label">Frequency</span>
+                                </div>
+                                <div class="cursor-card-body">
+                                    <div class="cursor-card-row">
+                                        <span class="cursor-card-value">{{ cursor_data.estimated_frequency }}</span>
+                                        <span class="cursor-card-unit">{{ cursor_data.estimated_frequency_unit }}</span>
+                                    </div>
+                                    <div class="cursor-card-sub">f = 1 / Δt</div>
+                                </div>
+                            </div>
+                            <div class="cursor-card" data-cursor="period">
+                                <div class="cursor-card-head">
+                                    <span class="cursor-card-icon">T</span>
+                                    <span class="cursor-card-label">Period</span>
+                                </div>
+                                <div class="cursor-card-body">
+                                    <div class="cursor-card-row">
+                                        <span class="cursor-card-value">{{ cursor_data.delta_t }}</span>
+                                        <span class="cursor-card-unit">{{ cursor_data.delta_t_unit }}</span>
+                                    </div>
+                                    <div class="cursor-card-sub">T = 1 / f</div>
+                                </div>
+                            </div>
+                            <div class="cursor-card cursor-dual-only" data-cursor="period-ref" {% if cursor_data.mode != 'dual' %}style="display:none"{% endif %}>
+                                <div class="cursor-card-head">
+                                    <span class="cursor-card-icon">T</span>
+                                    <span class="cursor-card-label">Ref Period</span>
+                                </div>
+                                <div class="cursor-card-body">
+                                    <div class="cursor-card-row">
+                                        <span class="cursor-card-value">{{ cursor_data.period }}</span>
+                                        <span class="cursor-card-unit">{{ cursor_data.period_unit }}</span>
+                                    </div>
+                                    <div class="cursor-card-sub">Reference from Signal A</div>
+                                </div>
+                            </div>
+                        </div>
+                        <script type="application/json" id="cursorPlotData">{{ cursor_data.plot_points|tojson }}</script>
+                        <script type="application/json" id="cursorPlotDataB" style="display:none">{{ cursor_data.plot_points_b|tojson }}</script>
+                    </div>
+                    <!-- FRAGMENT:module-cursor:end -->
+                </section>
+
+                <section class="section-card">
+                    <div class="graph-header">
+                        <span class="graph-header-title">Cursor Graph</span>
+                        <div class="graph-header-labels" id="cursorGraphInfo"></div>
+                    </div>
+                    <div class="graph-card" style="margin-bottom:0;">
+                        <a class="graph-dl-btn" href="{{ url_for('download_cursor_graph') }}" download {% if not file or not cursor_data.enabled %}style="display:none"{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                        <div class="cursor-graph-wrapper {% if cursor_data.enabled %}is-active{% endif %}" id="cursorGraph"
+                            data-time-min="{{ cursor_data.time_min }}"
+                            data-time-max="{{ cursor_data.time_max }}"
+                            data-voltage-min="{{ cursor_voltage_min }}"
+                            data-voltage-max="{{ cursor_voltage_max }}"
+                            data-vdiv="{{ cursor_vdiv_v }}"
+                            data-vdiv-ch1="{{ cursor_vdiv_ch1 }}"
+                            data-vdiv-ch2="{{ cursor_vdiv_ch2 }}"
+                            data-channel="{{ cursor_data.channel }}"
+                            data-ch1-name="{{ ch1_name }}"
+                            data-ch2-name="{{ ch2_name }}"
+                            data-tdiv="{{ cursor_config_tdiv_s }}"
+                            data-cursor-mode="{% if cursor_data.mode == 'dual' %}dual{% else %}single{% endif %}"
+                            data-signal-a="{{ cursor_data.signal_a }}"
+                            data-signal-b="{{ cursor_data.signal_b }}">
+                            <svg class="cursor-svg" viewBox="0 0 1000 607" preserveAspectRatio="none" {% if not cursor_data.enabled %}hidden{% endif %}>
+                                <rect x="0" y="0" width="1000" height="607" fill="#0D0D14"></rect>
+                                <g id="cursorGrid"></g>
+                                <path id="cursorWavePath" class="cursor-wave-path"></path>
+                                <path id="cursorWavePathB" class="cursor-wave-path-b" style="display:none"></path>
+                                <g id="cursorMarkers">
+                                    <line id="cursorLineT1" class="cursor-svg-line" x1="0" y1="24" x2="0" y2="563"></line>
+                                    <line id="cursorLineT2" class="cursor-svg-line" x1="0" y1="24" x2="0" y2="563"></line>
+                                    <circle id="cursorDotT1" class="cursor-dot" r="3" cx="0" cy="0"></circle>
+                                    <circle id="cursorDotT2" class="cursor-dot" r="3" cx="0" cy="0"></circle>
+                                    <circle id="cursorHandleT1" class="cursor-handle" r="6" cx="0" cy="34"></circle>
+                                    <circle id="cursorHandleT2" class="cursor-handle" r="6" cx="0" cy="34"></circle>
+                                    <text id="cursorLabelT1" class="cursor-svg-label" x="0" y="582" text-anchor="middle">A</text>
+                                    <text id="cursorLabelT2" class="cursor-svg-label" x="0" y="582" text-anchor="middle">B</text>
+                                </g>
+                            </svg>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- PANEL: DERIVATIVE & INTEGRAL                                  -->
+            <!-- ============================================================ -->
+            <div class="content-panel" id="panel-calculus">
+                <div class="content-panel-header">
+                    <h2>Derivative &amp; Integral</h2>
+                </div>
+                <section class="section-card">
+                    <h3>Derivative &amp; Integral</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" form="calc-form" {% if not file %}disabled{% endif %}>Apply</button>
+                    </div>
+                    <form method="POST" id="calc-form" class="form-row">
+                        <input type="hidden" name="calculus_apply" value="1">
+                        <div class="form-group">
+                            <label>Channel</label>
+                            <select name="calculus_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                <option value="X" {% if calculus_data.channel == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                <option value="Y" {% if calculus_data.channel == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if calculus_data.channel == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                    </form>
+                    <div class="cursor-measurements" style="margin-top:12px;">
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Derivative peak</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ calculus_data.derivative_peak }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Final integral</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ calculus_data.integral_final }}</span></div></div></div>
+                    </div>
+                </section>
+                <section class="section-card">
+                    <div class="graph-header">
+                        <span class="graph-header-title">Derivative Graph</span>
+                        <div class="graph-header-labels">
+                            {% if calculus_data.enabled %}<span class="graph-label">Channel {{ 'CH1' if calculus_data.channel == 'X' else 'CH2' if calculus_data.channel == 'Y' else calculus_data.channel }}</span>{% endif %}
+                            {% if calculus_data.derivative_vdiv_str %}<span class="graph-label">{{ calculus_data.derivative_vdiv_str }}</span>{% endif %}
+                            {% if calculus_data.derivative_tdiv_str %}<span class="graph-label graph-label-time">Time {{ calculus_data.derivative_tdiv_str }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="graph-card" style="margin-bottom:0;">
+                        <a class="graph-dl-btn" href="{{ url_for('download_derivative_graph') }}" download {% if not file or not calculus_data.enabled %}style="display:none"{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                        <img src="data:image/png;base64,{{ calculus_data.derivative_graph }}" alt="Derivative graph">
+                    </div>
+                </section>
+                <section class="section-card">
+                    <div class="graph-header">
+                        <span class="graph-header-title">Integral Graph</span>
+                        <div class="graph-header-labels">
+                            {% if calculus_data.enabled %}<span class="graph-label">Channel {{ 'CH1' if calculus_data.channel == 'X' else 'CH2' if calculus_data.channel == 'Y' else calculus_data.channel }}</span>{% endif %}
+                            {% if calculus_data.integral_vdiv_str %}<span class="graph-label">{{ calculus_data.integral_vdiv_str }}</span>{% endif %}
+                            {% if calculus_data.integral_tdiv_str %}<span class="graph-label graph-label-time">Time {{ calculus_data.integral_tdiv_str }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="graph-card" style="margin-bottom:0;">
+                        <a class="graph-dl-btn" href="{{ url_for('download_integral_graph') }}" download {% if not file or not calculus_data.enabled %}style="display:none"{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                        <img src="data:image/png;base64,{{ calculus_data.integral_graph }}" alt="Integral graph">
+                    </div>
+                </section>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- PANEL: CURRENT                                                -->
+            <!-- ============================================================ -->
+            <div class="content-panel" id="panel-current">
+                <div class="content-panel-header">
+                    <h2>Current Estimation</h2>
+                </div>
+                <section class="section-card">
+                    <h3>Current Parameters</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary" type="submit" form="current-form" {% if not file %}disabled{% endif %}>Apply</button>
+                    </div>
+                    <form method="POST" id="current-form" class="form-row">
+                        <input type="hidden" name="current_apply" value="1">
+                        <div class="form-group">
+                            <label>Channel</label>
+                            <select name="current_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                <option value="X" {% if current_data.channel == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                <option value="Y" {% if current_data.channel == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if current_data.channel == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Model</label>
+                            <select name="current_method" class="form-select" {% if not file %}disabled{% endif %}>
+                                <option value="resistor" {% if current_data.method == 'resistor' %}selected{% endif %}>Resistor: i=v/R</option>
+                                <option value="capacitor" {% if current_data.method == 'capacitor' %}selected{% endif %}>Capacitor: i=C dv/dt</option>
+                                <option value="inductor" {% if current_data.method == 'inductor' %}selected{% endif %}>Inductor: i=(1/L)∫v dt</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Component value</label>
+                            <input type="number" step="any" min="0" name="current_component_value" value="{{ current_data.component_value_input }}" class="form-input" placeholder="ohm / F / H" {% if not file %}disabled{% endif %}>
+                        </div>
+                        <div class="form-group">
+                            <label>Inductor init</label>
+                            <select name="current_inductor_initial_mode" class="form-select" {% if not file %}disabled{% endif %}>
+                                <option value="zero" {% if current_data.inductor_initial_mode == 'zero' %}selected{% endif %}>Zero</option>
+                                <option value="zero_mean" {% if current_data.inductor_initial_mode == 'zero_mean' %}selected{% endif %}>Zero mean</option>
+                                <option value="manual" {% if current_data.inductor_initial_mode == 'manual' %}selected{% endif %}>Manual</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Manual I₀ (A)</label>
+                            <input type="number" step="any" name="current_inductor_initial_value" value="{{ current_data.inductor_initial_value_input }}" class="form-input" placeholder="0" {% if not file %}disabled{% endif %}>
+                        </div>
+                    </form>
+                    <p class="text-muted" style="font-size:12px;margin-top:8px;">Resistor: i=v/R &middot; Capacitor: i=C·dv/dt &middot; Inductor: i=(1/L)∫v dt</p>
+                </section>
+
+                <section class="section-card" id="module-current">
+                    <h3>Current Results</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_current_latex') }}', 'Current LaTeX copied.')" {% if not file or not current_data.enabled %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <div class="cursor-measurements">
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Mean current</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.current_mean }} A</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">RMS current</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.current_rms }} A</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Max current</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.current_max }} A</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Min current</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.current_min }} A</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Peak-to-peak</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.current_peak_to_peak }} A</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Phase angle</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.phase_angle_deg }}°</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Vrms</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.voltage_rms }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Apparent power</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.apparent_power_va }} VA</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Active power</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.active_power_w }} W</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Reactive power</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.reactive_power_var }} VAR</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Power factor</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.power_factor }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Complex power</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ current_data.complex_power_real_w }} + j{{ current_data.complex_power_imag_var }} VA</span></div></div></div>
+                    </div>
+                    {% if current_data.warnings %}
+                    <div class="alert alert-warning">
+                        {% for warning in current_data.warnings %}<div>{{ warning }}</div>{% endfor %}
+                    </div>
+                    {% endif %}
+                </section>
+
+                <section class="section-card">
+                    <div class="graph-header">
+                        <span class="graph-header-title">Voltage &amp; Current Graph</span>
+                        <div class="graph-header-labels">
+                            <span class="graph-label"><span class="graph-swatch" style="background:{{ ch1_color if current_data.channel == 'X' else ch2_color }}"></span>V{% if current_data.vdiv_str %} {{ current_data.vdiv_str }}{% endif %}</span>
+                            <span class="graph-label"><span class="graph-swatch" style="background:{{ orange_color }}"></span>I{% if current_data.vdiv2_str %} {{ current_data.vdiv2_str }}{% endif %}</span>
+                            {% if current_data.tdiv_str %}<span class="graph-label graph-label-time">Time {{ current_data.tdiv_str }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="graph-card" style="margin-bottom:0;">
+                        <a class="graph-dl-btn" href="{{ url_for('download_current_graph') }}" download {% if not file or not current_data.enabled %}style="display:none"{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                        <img src="data:image/png;base64,{{ current_data.graph }}" alt="Voltage and current graph">
+                    </div>
+                </section>
+
+                <section class="section-card">
+                    <h3>Save Current Calculation</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" form="save-current-form" {% if not file or not current_data.enabled %}disabled{% endif %}>Save</button>
+                    </div>
+                    <form method="POST" id="save-current-form" class="form-row">
+                        <input type="hidden" name="current_save" value="1">
+                        <div class="form-group">
+                            <label>Snapshot name</label>
+                            <input type="text" name="current_snapshot_name" class="form-input" placeholder="Current snapshot" {% if not file or not current_data.enabled %}disabled{% endif %}>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="section-card">
+                    <h3>Saved Calculations</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_current_snapshots_latex') }}', 'Saved calculations LaTeX copied.')" {% if not file or not current_snapshots %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <table class="data-table compact-table">
+                        <thead><tr><th>Name</th><th>File</th><th>Model</th><th>RMS</th></tr></thead>
+                        <tbody>
+                            {% for item in current_snapshots %}
+                            <tr>
+                                <td>{{ item.name }}</td>
+                                <td>{{ item.file_name }}</td>
+                                <td>{{ item.method }}</td>
+                                <td>{{ item.current_rms }} A ({{ item.frequency_hz }} Hz)</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4" class="text-muted">No saved current calculations.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </section>
+
+                <section class="section-card">
+                    <h3>Total Current Analysis</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" form="total-current-form" {% if not file or not current_snapshots %}disabled{% endif %}>Apply</button>
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_total_current_latex') }}', 'Total Current LaTeX copied.')" {% if not file or not total_current_data.enabled %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <form method="POST" id="total-current-form" class="form-row">
+                        <input type="hidden" name="total_current_apply" value="1">
+                        <div class="form-group">
+                            <label>Voltage channel</label>
+                            <select name="total_current_voltage_channel" class="form-select" {% if not file or not current_snapshots %}disabled{% endif %}>
+                                <option value="X" {% if total_current_data.voltage_channel == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                <option value="Y" {% if total_current_data.voltage_channel == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if total_current_data.voltage_channel == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Freq tolerance (%)</label>
+                            <input type="number" step="any" min="0" name="total_current_frequency_tolerance" value="{{ total_current_data.frequency_tolerance_percent }}" class="form-input" placeholder="5" {% if not file or not current_snapshots %}disabled{% endif %}>
+                        </div>
+                    </form>
+                    <div class="cursor-measurements" style="margin-top:12px;">
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Compatible</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ total_current_data.compatible_count }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Rejected</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ total_current_data.incompatible_count }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Total RMS</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ total_current_data.total_current_rms }} A</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Total Vpp</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ total_current_data.total_current_peak_to_peak }} A</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Phase</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ total_current_data.phase_angle_deg }}°</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Vrms</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ total_current_data.voltage_rms }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Apparent power</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ total_current_data.apparent_power_va }} VA</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Active power</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ total_current_data.active_power_w }} W</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Power factor</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ total_current_data.power_factor }}</span></div></div></div>
+                    </div>
+                    {% if total_current_data.warnings %}
+                    <div class="alert alert-warning">
+                        {% for warning in total_current_data.warnings %}<div>{{ warning }}</div>{% endfor %}
+                    </div>
+                    {% endif %}
+                </section>
+
+                <section class="section-card">
+                    <div class="graph-header">
+                        <span class="graph-header-title">Total Current Graph</span>
+                        <div class="graph-header-labels">
+                            <span class="graph-label"><span class="graph-swatch" style="background:{{ ch1_color if total_current_data.voltage_channel == 'X' else ch2_color }}"></span>{{ ch1_name }}{% if total_current_data.vdiv_str %} {{ total_current_data.vdiv_str }}{% endif %}</span>
+                            <span class="graph-label"><span class="graph-swatch" style="background:{{ orange_color }}"></span>Current{% if total_current_data.vdiv2_str %} {{ total_current_data.vdiv2_str }}{% endif %}</span>
+                            {% if total_current_data.tdiv_str %}<span class="graph-label graph-label-time">Time {{ total_current_data.tdiv_str }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="graph-card" style="margin-bottom:0;">
+                        <a class="graph-dl-btn" href="{{ url_for('download_total_current_graph') }}" download {% if not file or not total_current_data.enabled %}style="display:none"{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                        <img src="data:image/png;base64,{{ total_current_data.graph }}" alt="Total current graph">
+                    </div>
+                </section>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- PANEL: TRANSFER                                                -->
+            <!-- ============================================================ -->
+            <div class="content-panel" id="panel-transfer">
+                <div class="content-panel-header">
+                    <h2>Transfer Analysis (Vin / Vout)</h2>
+                </div>
+                <section class="section-card">
+                    <h3>Transfer Analysis</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" form="transfer-form" {% if not file %}disabled{% endif %}>Apply</button>
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_transfer_latex') }}', 'Transfer LaTeX copied.')" {% if not file or not transfer_data.enabled %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <form method="POST" id="transfer-form" class="form-row">
+                        <input type="hidden" name="transfer_apply" value="1">
+                        <div class="form-group">
+                            <label>Vin</label>
+                            <select name="transfer_input_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                <option value="X" {% if transfer_data.input_channel == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                <option value="Y" {% if transfer_data.input_channel == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if transfer_data.input_channel == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Vout</label>
+                            <select name="transfer_output_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                <option value="X" {% if transfer_data.output_channel == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                <option value="Y" {% if transfer_data.output_channel == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if transfer_data.output_channel == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                    </form>
+                    <div class="cursor-measurements" style="margin-top:12px;">
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Vin RMS</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ transfer_data.vin_rms }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Vout RMS</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ transfer_data.vout_rms }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Vin Vpp</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ transfer_data.vin_vpp }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Vout Vpp</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ transfer_data.vout_vpp }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Vout/Vin RMS</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ transfer_data.gain_rms }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Gain</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ transfer_data.gain_db }} dB</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Phase</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ transfer_data.phase_angle_deg }}°</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Delay</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ transfer_data.delay_value }} {{ transfer_data.delay_unit }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Freq</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ transfer_data.frequency_hz }} Hz</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Correlation</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ transfer_data.correlation_peak }}</span></div></div></div>
+                    </div>
+                    <p class="text-muted" style="font-size:12px;">Compare input vs output signal for RC/RL transfer analysis, attenuation, and phase shift.</p>
+                </section>
+
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- PANEL: X-Y                                                    -->
+            <!-- ============================================================ -->
+            <div class="content-panel" id="panel-xy">
+                <div class="content-panel-header">
+                    <h2>X-Y Mode</h2>
+                </div>
+                <section class="section-card">
+                    <h3>X-Y Mode</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" form="xy-form" {% if not file %}disabled{% endif %}>Apply</button>
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_xy_latex') }}', 'XY LaTeX copied.')" {% if not file or not xy_data.enabled %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <form method="POST" id="xy-form" class="form-row">
+                        <input type="hidden" name="xy_apply" value="1">
+                        <div class="form-group">
+                            <label>X axis</label>
+                            <select name="xy_x_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                <option value="X" {% if xy_data.x_channel == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                <option value="Y" {% if xy_data.x_channel == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if xy_data.x_channel == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Y axis</label>
+                            <select name="xy_y_channel" class="form-select" {% if not file %}disabled{% endif %}>
+                                <option value="X" {% if xy_data.y_channel == 'X' %}selected{% endif %}>{{ ch1_name }}</option>
+                                <option value="Y" {% if xy_data.y_channel == 'Y' %}selected{% endif %}>{{ ch2_name }}</option>
+                                <option value="MATH" {% if xy_data.y_channel == 'MATH' %}selected{% endif %}>MATH</option>
+                            </select>
+                        </div>
+                    </form>
+                    <p class="text-muted" style="font-size:12px;">Plots Y vs X sample by sample for Lissajous figures and phase inspection.</p>
+                    <div class="cursor-measurements">
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Samples</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ xy_data.sample_count }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">X range</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ xy_data.x_min }} to {{ xy_data.x_max }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Y range</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ xy_data.y_min }} to {{ xy_data.y_max }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Correlation</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ xy_data.correlation_coefficient }}</span></div></div></div>
+                    </div>
+                </section>
+                <section class="section-card">
+                    <div class="graph-header">
+                        <span class="graph-header-title">X-Y Graph</span>
+                        <div class="graph-header-labels">
+                            <span class="graph-label">X: {{ 'CH1' if xy_data.x_channel == 'X' else 'CH2' if xy_data.x_channel == 'Y' else xy_data.x_channel }}</span>
+                            <span class="graph-label">Y: {{ 'CH1' if xy_data.y_channel == 'X' else 'CH2' if xy_data.y_channel == 'Y' else xy_data.y_channel }}</span>
+                            {% if xy_data.vdiv_str %}<span class="graph-label">{{ xy_data.vdiv_str }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="graph-card" style="margin-bottom:0;">
+                        <a class="graph-dl-btn" href="{{ url_for('download_xy_graph') }}" download {% if not file or not xy_data.enabled %}style="display:none"{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                        <img src="data:image/png;base64,{{ xy_data.graph }}" alt="X-Y mode graph">
+                    </div>
+                </section>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- PANEL: CORRELATION                                            -->
+            <!-- ============================================================ -->
+            <div class="content-panel" id="panel-correlation">
+                <div class="content-panel-header">
+                    <h2>Channel Correlation</h2>
+                </div>
+                <section class="section-card" id="module-correlation">
+                    <h3>Channel Correlation</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-primary btn-sm" type="submit" name="correlation_apply" value="1" form="corr-form" {% if not file %}disabled{% endif %}>Apply</button>
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_correlation_latex') }}', 'Correlation LaTeX copied.')" {% if not file or not correlation_data.enabled %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <form method="POST" id="corr-form" style="display:none;"><input type="hidden" name="correlation_apply" value="1"></form>
+                    <div class="cursor-measurements">
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Max correlation</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ correlation_data.max_correlation }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Delay</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ correlation_data.delay_value }} {{ correlation_data.delay_unit }}</span></div></div></div>
+                    </div>
+                </section>
+                <section class="section-card">
+                    <div class="graph-header">
+                        <span class="graph-header-title">Correlation Graph</span>
+                        <div class="graph-header-labels">
+                            <span class="graph-label"><span class="graph-swatch" style="background:{{ teal_color }}"></span>{{ ch1_name }} vs {{ ch2_name }}</span>
+                            {% if correlation_data.vdiv_str %}<span class="graph-label">{{ correlation_data.vdiv_str }}</span>{% endif %}
+                            {% if correlation_data.tdiv_str %}<span class="graph-label graph-label-time">Time {{ correlation_data.tdiv_str }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="graph-card" style="margin-bottom:0;">
+                        <a class="graph-dl-btn" href="{{ url_for('download_correlation_graph') }}" download {% if not file or not correlation_data.enabled %}style="display:none"{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                        <img src="data:image/png;base64,{{ correlation_data.graph }}" alt="Correlation graph">
+                    </div>
+                </section>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- PANEL: SNAPSHOTS                                              -->
+            <!-- ============================================================ -->
+            <div class="content-panel" id="panel-snapshots">
+                <div class="content-panel-header">
+                    <h2>Snapshots &amp; Comparison</h2>
+                </div>
+                <div class="grid-two" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                    <section class="section-card">
+                        <h3>Save Snapshot</h3>
+                        <div class="section-actions">
+                            <button class="btn btn-primary btn-sm" type="submit" form="save-snap-form" {% if not file %}disabled{% endif %}>Save</button>
+                        </div>
+                        <form method="POST" id="save-snap-form" class="form-row">
+                            <input type="hidden" name="save_snapshot" value="1">
+                            <div class="form-group" style="flex:1;">
+                                <label>Name</label>
+                                <input type="text" name="snapshot_name" class="form-input" placeholder="Snapshot name" {% if not file %}disabled{% endif %}>
+                            </div>
+                        </form>
+                    </section>
+                    <section class="section-card">
+                        <h3>Compare</h3>
+                        <div class="section-actions">
+                            <button class="btn btn-primary btn-sm" type="submit" form="compare-form" {% if not file or not snapshots %}disabled{% endif %}>Compare</button>
+                        </div>
+                        <form method="POST" id="compare-form" class="form-row">
+                            <input type="hidden" name="compare_apply" value="1">
+                            <div class="form-group" style="flex:1;">
+                                <label>Against</label>
+                                <select name="snapshot_id" class="form-select" {% if not file or not snapshots %}disabled{% endif %}>
+                                    <option value="">Select snapshot</option>
+                                    {% for snapshot in snapshots %}
+                                    <option value="{{ snapshot.id }}">{{ snapshot.name }} - {{ snapshot.file_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </form>
+                    </section>
+                </div>
+
+                <section class="section-card">
+                    <h3>Saved Snapshots</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_snapshots_latex') }}', 'Snapshots LaTeX copied.')" {% if not file or not snapshots %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <table class="data-table compact-table">
+                        <thead><tr><th>Name</th><th>File</th><th>Date</th></tr></thead>
+                        <tbody>
+                            {% for snapshot in snapshots %}
+                            <tr><td>{{ snapshot.name }}</td><td>{{ snapshot.file_name }}</td><td>{{ snapshot.created_at }}</td></tr>
+                            {% else %}
+                            <tr><td colspan="3" class="text-muted">No saved snapshots.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </section>
+
+                <section class="section-card">
+                    <h3>Comparison Results</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-sm btn-latex" onclick="copyEndpoint(event, '{{ url_for('download_comparison_latex') }}', 'Comparison LaTeX copied.')" {% if not file or not comparison_data.enabled %}disabled{% endif %}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+                            Copy LaTeX
+                        </button>
+                    </div>
+                    <div class="cursor-measurements">
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">Snapshot</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ comparison_data.snapshot_name or 'Pending' }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">ΔVpp {{ ch1_name }}</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ comparison_data.delta_vpp_x }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">ΔVpp {{ ch2_name }}</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ comparison_data.delta_vpp_y }} V</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">ΔFreq {{ ch1_name }}</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ comparison_data.delta_freq_x }} {{ comparison_data.delta_freq_x_unit }}</span></div></div></div>
+                        <div class="cursor-card"><div class="cursor-card-head"><span class="cursor-card-label">ΔFreq {{ ch2_name }}</span></div><div class="cursor-card-body"><div class="cursor-card-row"><span class="cursor-card-value">{{ comparison_data.delta_freq_y }} {{ comparison_data.delta_freq_y_unit }}</span></div></div></div>
+                    </div>
+                </section>
+            </div>
+
+        </main>
+    </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<!-- FRAGMENT:page-state:start -->
+<div id="pageState" data-toast-message="{{ toast_message or '' }}" data-toast-variant="{{ toast_variant or 'success' }}" data-ch1-name="{{ ch1_name }}" data-ch2-name="{{ ch2_name }}"></div>
+<!-- FRAGMENT:page-state:end -->
+
+<script src="{{ url_for('static', filename='opencode.js') }}"></script>
+</body>
+</html>

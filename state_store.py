@@ -6,9 +6,11 @@ from threading import Lock
 import numpy as np
 from flask import session
 
+from version import short_version
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-APP_NAME = "FNIRSI 1014D Analyzer"
+APP_NAME = f"FNIRSI 1014D Analyzer {short_version()}"
 APP_DATA_DIR = os.path.join(os.getenv("LOCALAPPDATA", BASE_DIR), "FNIRSI1014DAnalyzer")
 UPLOAD_FOLDER = os.path.join(APP_DATA_DIR, "uploads")
 SECRET_KEY_PATH = os.path.join(APP_DATA_DIR, "flask_secret.key")
@@ -105,7 +107,14 @@ DEFAULT_CALIBRATION_SETTINGS = {
     "invert_y": False,
     "normalize": False,
 }
-DEFAULT_CURSOR_SETTINGS = {"channel": "X", "t1": "", "t2": ""}
+DEFAULT_CURSOR_SETTINGS = {
+    "channel": "X",
+    "t1": "",
+    "t2": "",
+    "mode": "single",
+    "signal_a": "X",
+    "signal_b": "Y",
+}
 DEFAULT_CYCLE_SETTINGS = {"channel": "X"}
 T_CLEAR = np.arange(-375, 376)
 CH_CLEAR = np.zeros(751)
@@ -121,7 +130,6 @@ AJAX_MODULE_ACTIONS = {
     "math",
     "fft",
     "statistics",
-    "advanced",
     "calculus",
     "current",
     "transfer",
@@ -132,6 +140,21 @@ AJAX_MODULE_ACTIONS = {
     "cycle",
     "snapshot",
     "comparison",
+    "digital_pwm",
+    "digital_edges",
+    "digital_pulses",
+    "digital_logic",
+    "export_png",
+    "export_svg",
+    "export_csv",
+    "export_pdf",
+    "project_save",
+    "project_load",
+}
+
+DEFAULT_DIGITAL_SETTINGS = {
+    "channel": "X",
+    "threshold": "",
 }
 
 
@@ -310,6 +333,11 @@ def clear_loaded_state():
         "comparison_snapshot_id",
         "comparison_data",
         "fft_data",
+        "digital_data",
+        "project_data",
+        "recent_files",
+        "export_settings",
+        "user_preferences",
     )
     for key in keys:
         state_pop(key, None)

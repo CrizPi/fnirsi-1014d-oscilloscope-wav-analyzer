@@ -74,6 +74,15 @@ def launch_desktop(host="127.0.0.1", port=5000, width=1200, height=800):
     if not wait_for_server(host=host, port=port):
         raise RuntimeError(f"Flask server did not start on http://{host}:{port}")
 
+    icon_path = os.path.join(BASE_DIR, "templates", "icon.ico")
+    print(f"[DIAG] Directorio actual: {os.getcwd()}")
+    print(f"[DIAG] Icono WinForms: {icon_path}")
+    if os.path.exists(icon_path):
+        size = os.path.getsize(icon_path)
+        print(f"[DIAG] Icono encontrado ({size} bytes).")
+    else:
+        print(f"[DIAG] Icono NO encontrado. Se usará el ícono por defecto.")
+
     window = webview.create_window(
         APP_NAME,
         f"http://{host}:{port}",
@@ -87,12 +96,17 @@ def launch_desktop(host="127.0.0.1", port=5000, width=1200, height=800):
         cleanup_upload_folder()
 
     window.events.closed += on_window_closed
-    webview.start()
+
+    if os.path.exists(icon_path):
+        try:
+            webview.start(icon=icon_path)
+        except Exception as exc:
+            print(f"[WARN] Error al cargar el ícono '{icon_path}': {exc}")
+            print("[WARN] Iniciando sin ícono personalizado...")
+            webview.start()
+    else:
+        webview.start()
 
 
 if __name__ == "__main__":
-    mode = os.getenv("FNIRSI_APP_MODE", "desktop").lower()
-    if mode == "server":
-        run_flask_server()
-    else:
-        launch_desktop()
+    launch_desktop()

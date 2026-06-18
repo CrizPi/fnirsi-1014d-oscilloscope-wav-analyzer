@@ -1,0 +1,6 @@
+Flask
+Werkzeug
+numpy
+scipy
+matplotlib
+pywebview
